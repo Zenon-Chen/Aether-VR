@@ -66,18 +66,18 @@ class ER2Client:
     def _build_live_config(self) -> dict:
         """构建 LiveConnectConfig 字典
 
-        包含 session_resumption、context_window_compression、
-        input_audio_transcription 等高级配置。
+        包含 context_window_compression、input_audio_transcription 等高级配置。
+
+        注意：session_resumption（透明会话恢复）已移除——
+        SessionResumptionConfig(transparent=True) 仅支持 Gemini Enterprise
+        Agent Platform 模式，在 Developer API key 模式下 google-genai SDK
+        会直接抛 ValueError 导致启动崩溃（见任务 #4）。如未来使用
+        Enterprise key，可恢复该配置块。
         """
         config: dict = {
             "response_modalities": self.config.response_modalities,
             "system_instruction": SYSTEM_INSTRUCTION,
             "tools": TOOL_DECLARATIONS,
-            # 会话恢复：启用后服务器会发送 session_resumption_update
-            "session_resumption": types.SessionResumptionConfig(
-                handle=self._resumption_token,  # None 表示新建会话
-                transparent=True,
-            ),
             # 上下文窗口压缩：防止长对话超出 token 限制
             "context_window_compression": types.ContextWindowCompressionConfig(
                 trigger_tokens=8000,
