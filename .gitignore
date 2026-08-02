@@ -34,6 +34,16 @@ _legacy/
 *.tmp
 *.bak
 
+# Temporary debug scripts
+_tmp_*.py
+
+# IDE runtime artifacts
+.qoder/
+
+# Test/delivery artifacts (binary outputs)
+logs/*.pkl
+logs/*.wav
+
 # DART model files & large data (download separately)
 dart/mld_denoiser/*/checkpoint_*.pt
 dart/mvae/*/checkpoint_*.pt
