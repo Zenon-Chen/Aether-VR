@@ -4,6 +4,7 @@
 用于单元测试、无 GPU 环境演示，或作为持久化实现之前的占位。
 """
 
+import asyncio
 import time
 from typing import Optional
 
@@ -60,6 +61,32 @@ class InMemoryBlockRepository:
 
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:top_k]
+
+
+    async def process_pending(self, blocks=None, embed_fn=None) -> int:
+        """Embed blocks without vectors, with bounded API concurrency."""
+        if embed_fn is None:
+            embed_fn = blocks
+            blocks = None
+        pending = [b for b in (blocks or list(self._blocks.values())) if b.embedding is None]
+        if not pending:
+            return 0
+        semaphore = asyncio.Semaphore(4)
+
+        async def embed(block):
+            async with semaphore:
+                vector = await embed_fn(block.content)
+                block.embedding = np.asarray(vector, dtype=np.float32)
+
+        await asyncio.gather(*(embed(block) for block in pending))
+        return len(pending)
+
+    def get_summary(self) -> dict:
+        return {
+            "total_blocks": len(self._blocks),
+            "total_active_tokens": self._total_tokens,
+            "pending_embeddings": sum(b.embedding is None for b in self._blocks.values()),
+        }
 
     def get_blocks_by_importance(self, threshold: float = 0.3) -> list[ContextBlock]:
         return [b for b in self._blocks.values() if b.importance_score < threshold]

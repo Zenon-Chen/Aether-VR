@@ -380,8 +380,8 @@ class OSCSender(OSCPort):
     @staticmethod
     def interpolate_frames(
         poses: list,
-        src_fps: int = 30,
-        target_fps: int = 60,
+        src_fps: int,
+        target_fps: int,
     ) -> list:
         """帧率插值：线性插值将 src_fps 提升到 target_fps
 

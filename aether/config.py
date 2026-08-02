@@ -71,7 +71,7 @@ class ContextConfig(BaseModel):
     embedding_model: str = "gemini-embedding-001"
     embedding_dim: int = 768  # MRL 降维后
     scorer_model: str = "gemini-2.0-flash"
-    max_active_tokens: int = 102400  # 80% of 128k
+    max_active_tokens: int = 100000  # 80% of 128k
     heartbeat_interval: int = 30  # 秒
     scoring_interval: int = 30  # 秒
     scoring_batch_size: int = 10  # 块数触发评分
@@ -98,22 +98,22 @@ class AetherConfig(BaseModel):
     log: LogConfig = Field(default_factory=LogConfig)
 
 
-def load_config(config_path: str = "config.yaml") -> AetherConfig:
+def load_config(config_path: str | Path | None = None) -> AetherConfig:
     """从 YAML 文件加载配置，环境变量优先。
 
     Args:
-        config_path: YAML 配置文件路径，默认当前目录下 config.yaml
+        config_path: YAML 配置文件路径；默认使用项目根目录 config.yaml
 
     Returns:
         AetherConfig 实例，文件不存在时返回默认配置
     """
-    path = Path(config_path)
+    path = Path(config_path) if config_path is not None else Path(__file__).resolve().parent.parent / "config.yaml"
     if path.exists():
         with open(path, "r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         cfg = AetherConfig(**raw)
     else:
-        logger.warning("[Config] %s not found, using defaults", config_path)
+        logger.warning("[Config] %s not found, using defaults", path)
         cfg = AetherConfig()
 
     # API Key 非空校验

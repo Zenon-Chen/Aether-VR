@@ -36,7 +36,7 @@ context:
   embedding_model: "gemini-embedding-001"
   embedding_dim: 768
   scorer_model: "gemini-2.0-flash"
-  max_active_tokens: 102400
+  max_active_tokens: 100000
   heartbeat_interval: 30
   scoring_interval: 30
   scoring_batch_size: 10

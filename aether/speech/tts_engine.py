@@ -89,6 +89,7 @@ class TTSEngine(BaseTTSEngine, TTSPort):
 
         # 代际 ID，用于打断时使飞行中的 API 调用失效
         self._generation_id: int = 0
+        self._generation_lock = asyncio.Lock()
 
     @property
     def audio_queue(self) -> asyncio.Queue:
@@ -125,9 +126,9 @@ class TTSEngine(BaseTTSEngine, TTSPort):
             tagged = self._build_tagged_text(segment, emotion, speech_rate, is_first=(i == 0))
             tagged_segments.append(tagged)
 
-        # 递增代际 ID 并捕获，用于打断时丢弃旧结果
-        self._generation_id += 1
-        current_gen = self._generation_id
+        # 捕获本次代际；clear_queue 会原子推进代际使旧结果失效
+        async with self._generation_lock:
+            current_gen = self._generation_id
 
         # 3. 并发调用 TTS（但按序入队）
         tasks = []
@@ -140,7 +141,11 @@ class TTSEngine(BaseTTSEngine, TTSPort):
             try:
                 pcm_data = await task
                 if pcm_data is not None:
-                    await self._stream.produce(pcm_data)
+                    # 检查与入队必须原子，避免 clear_queue 夹在两者之间。
+                    async with self._generation_lock:
+                        if current_gen != self._generation_id:
+                            raise _StaleGeneration()
+                        await self._stream.produce(pcm_data)
                     logger.debug(f"[TTS] Segment {i+1}/{len(tasks)} queued")
             except _StaleGeneration:
                 logger.debug(f"[TTS] Segment {i+1}/{len(tasks)} discarded (stale generation)")
@@ -320,7 +325,7 @@ class TTSEngine(BaseTTSEngine, TTSPort):
     # ── 队列管理 ──────────────────────────────────
 
     def clear_queue(self):
-        """清空播放队列（用于打断场景），同时递增代际 ID 使飞行中的 API 调用失效"""
+        """同步打断入口：立即推进代际并清空已排队音频。"""
         self._generation_id += 1
         self._stream.clear()
         logger.info(f"[TTS] Queue cleared (generation -> {self._generation_id})")

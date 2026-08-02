@@ -320,19 +320,23 @@ class AudioPipeline(AudioPort):
         if status:
             logger.debug("[Audio] Output callback status: %s", status)
 
-        needed_bytes = frames * self.channels * self.sample_width
-        with self._output_lock:
-            if len(self._output_buffer) >= needed_bytes:
-                chunk = bytes(self._output_buffer[:needed_bytes])
-                del self._output_buffer[:needed_bytes]
-            else:
-                # 缓冲区不够，全部填静音
-                chunk = b"\x00" * needed_bytes
-                self._output_buffer.clear()
+        try:
+            needed_bytes = frames * self.channels * self.sample_width
+            with self._output_lock:
+                if len(self._output_buffer) >= needed_bytes:
+                    chunk = bytes(self._output_buffer[:needed_bytes])
+                    del self._output_buffer[:needed_bytes]
+                else:
+                    chunk = b"\x00" * needed_bytes
+                    self._output_buffer.clear()
 
-        outdata[:] = np.frombuffer(chunk, dtype=np.int16).reshape(
-            (frames, self.channels)
-        )
+            outdata[:] = np.frombuffer(chunk, dtype=np.int16).reshape(
+                (frames, self.channels)
+            )
+        except Exception:
+            # 绝不能让异常逃出实时音频线程；失败帧退化为静音。
+            logger.exception("[Audio] Output callback failed")
+            outdata.fill(0)
 
     async def output_loop(self):
         """音频输出主循环 — 从共享播放流获取音频，写入输出缓冲

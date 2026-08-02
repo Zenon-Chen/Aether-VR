@@ -37,7 +37,6 @@ class ContextBlockStore(BlockRepository):
         self._faiss_index = None  # 延迟初始化（需要 faiss-cpu）
         self._id_to_index: dict[str, int] = {}  # block_id -> FAISS 索引位置
         self._next_index: int = 0
-        self._pending_embeddings: list[ContextBlock] = []  # 待嵌入的块
         self._pending_removals: int = 0  # 待重建索引的移除计数
         self._rebuild_threshold: int = 50  # 累积移除次数达到此值时触发索引重建
 
@@ -55,8 +54,6 @@ class ContextBlockStore(BlockRepository):
         self.total_active_tokens += block.token_estimate
         if block.embedding is not None:
             self._add_to_faiss(block)
-        else:
-            self._pending_embeddings.append(block)
 
     def _add_to_faiss(self, block: ContextBlock):
         """将块的 embedding 添加到 FAISS"""
@@ -180,7 +177,7 @@ class ContextBlockStore(BlockRepository):
         return {
             "total_blocks": len(self.blocks),
             "total_active_tokens": self.total_active_tokens,
-            "pending_embeddings": len(self._pending_embeddings),
+            "pending_embeddings": sum(b.embedding is None for b in self.blocks.values()),
             "faiss_size": self._faiss_index.ntotal if self._faiss_index else 0,
             "pending_removals": self._pending_removals,
         }

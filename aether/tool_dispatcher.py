@@ -252,7 +252,7 @@ class ToolDispatcher(DispatcherPort):
                 self.state.recent_actions.append({
                     "action": action,
                     "duration": duration,
-                    "timestamp": asyncio.get_event_loop().time(),
+                    "timestamp": asyncio.get_running_loop().time(),
                 })
                 # 只保留最近 10 个动作
                 if len(self.state.recent_actions) > 10:
@@ -262,11 +262,12 @@ class ToolDispatcher(DispatcherPort):
                     "action": action,
                     "frames": result.get("num_frames", 0),
                 }
-            except Exception:
+            finally:
+                self.state.current_motion_task = None
                 self.state.motion_state = MotionState.IDLE
-                raise
         else:
             logger.warning("[Dispatcher] No motion handler registered")
+            self.state.motion_state = MotionState.IDLE
             return {"status": "no_handler"}
 
     async def _handle_status(self, args: dict) -> dict:
@@ -329,8 +330,10 @@ class ToolDispatcher(DispatcherPort):
 
         # 同步更新状态
         if self.state.current_motion_task and not self.state.current_motion_task.done():
-            self.state.current_motion_task.cancel()
+            motion_task = self.state.current_motion_task
+            motion_task.cancel()
             self.state.motion_state = MotionState.CANCELLED
+            motion_task.add_done_callback(lambda _task: setattr(self.state, "motion_state", MotionState.IDLE))
 
         if self.state.current_tts_task and not self.state.current_tts_task.done():
             self.state.current_tts_task.cancel()

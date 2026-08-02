@@ -25,7 +25,7 @@ from .io.audio_stream import AudioStream
 from .speech import TTSEngine
 from .context import (
     ContextBlock,
-    ContextBlockStore,
+    InMemoryBlockRepository,
     ImportanceScorer,
     ContextEvictor,
     RAGRetriever,
@@ -66,7 +66,7 @@ class AetherAgent:
         self.motion_use_case = MotionUseCase(self.dart, self.osc, config.dart)
 
         # ── 上下文管理 ────────────────────────────
-        self.block_store = ContextBlockStore(config.context.embedding_dim)
+        self.block_store = InMemoryBlockRepository(config.context.embedding_dim)
         self.scorer = ImportanceScorer(config.context, self.block_store, config.er2.api_key)
         self.evictor = ContextEvictor(config.context, self.block_store, config.er2.api_key)
         self.rag = RAGRetriever(config.context, self.block_store, config.er2.api_key)
@@ -103,6 +103,7 @@ class AetherAgent:
         self.er2.set_tool_call_handler(self.dispatcher.handle_tool_call)
         self.er2.set_tool_call_cancelled_handler(self.dispatcher.cancel_pending)
         self.er2.set_block_interceptor(self._block_interceptor)
+        self.er2.set_usage_callback(self.evictor.update_usage)
 
         # 5. 注入结果回调：后台任务完成后异步回传 FunctionResponse
         self.dispatcher.set_response_callback(self.er2.send_tool_response)
@@ -214,6 +215,7 @@ class AetherAgent:
         # play_filler_sound 是 async，需要在事件循环中调度
         try:
             loop = asyncio.get_running_loop()
+            loop.create_task(self.dispatcher.cancel_pending([]))
             loop.create_task(self.audio.play_filler_sound())
         except RuntimeError:
             pass  # 无运行中的事件循环，跳过垫音
@@ -232,18 +234,19 @@ class AetherAgent:
 
     async def run(self):
         """主运行循环 — 启动后台任务 + CLI 交互"""
-        await self.start()
+        tasks = []
+        try:
+            await self.start()
 
-        # 后台任务列表
+            # 后台任务列表
         # 注：AudioPipeline.start() 已创建 input_loop / output_loop 任务，
         #     TTS→播放 由共享 AudioStream 直连，无需桥接任务
-        tasks = [
-            asyncio.create_task(self.er2.receive_loop(), name="er2_receive"),
-            asyncio.create_task(self._heartbeat_loop(), name="heartbeat"),
-            asyncio.create_task(self._context_management_loop(), name="context_mgmt"),
-        ]
+            tasks = [
+                asyncio.create_task(self.er2.receive_loop(), name="er2_receive"),
+                asyncio.create_task(self._heartbeat_loop(), name="heartbeat"),
+                asyncio.create_task(self._context_management_loop(), name="context_mgmt"),
+            ]
 
-        try:
             await self._cli_loop()
         except KeyboardInterrupt:
             logger.info("Shutting down...")
@@ -263,42 +266,45 @@ class AetherAgent:
         """
         while self._running:
             await asyncio.sleep(1)
-            if self.heartbeat.should_send():
-                # 从 dispatcher 状态投影 AgentState（单一事实来源）
-                recent = self.dispatcher.state.recent_actions[-3:]
-                recent_actions = tuple(
-                    a.get("action", "unknown") if isinstance(a, dict) else str(a)
-                    for a in recent
-                )
-                state = AgentState(
-                    current_task=(
-                        f"executing: {recent_actions[-1]}"
-                        if self.dispatcher.state.motion_state
-                        in (MotionState.GENERATING, MotionState.PLAYING)
-                        and recent_actions
-                        else "idle"
-                    ),
-                    recent_actions=recent_actions,
-                    emotion_state=self.dispatcher.state.emotion_state,
-                )
+            try:
+                if self.heartbeat.should_send():
+                    # 从 dispatcher 状态投影 AgentState（单一事实来源）
+                    recent = self.dispatcher.state.recent_actions[-3:]
+                    recent_actions = tuple(
+                        a.get("action", "unknown") if isinstance(a, dict) else str(a)
+                        for a in recent
+                    )
+                    state = AgentState(
+                        current_task=(
+                            f"executing: {recent_actions[-1]}"
+                            if self.dispatcher.state.motion_state
+                            in (MotionState.GENERATING, MotionState.PLAYING)
+                            and recent_actions
+                            else "idle"
+                        ),
+                        recent_actions=recent_actions,
+                        emotion_state=self.dispatcher.state.emotion_state,
+                    )
 
-                msg = self.heartbeat.generate(state)
-                if msg:
-                    await self.er2.send_heartbeat(msg)
-                    logger.debug("[Heartbeat] %s...", msg[:80])
+                    msg = self.heartbeat.generate(state)
+                    if msg:
+                        await self.er2.send_heartbeat(msg)
+                        logger.debug("[Heartbeat] %s...", msg[:80])
+            except Exception:
+                logger.exception("[Heartbeat] Background iteration failed")
 
     async def _context_management_loop(self):
-        """上下文管理循环 — 评分 + 驱逐"""
+        """上下文管理循环 — 嵌入 + 评分 + 驱逐；单次失败不终止循环。"""
         while self._running:
             await asyncio.sleep(5)
-
-            # 重要性评分
-            if self.scorer.should_score():
-                await self.scorer.score_pending()
-
-            # 驱逐检查
-            if self.evictor.should_evict():
-                await self.evictor.evict()
+            try:
+                await self.block_store.process_pending(self.rag.embed_text)
+                if self.scorer.should_score():
+                    await self.scorer.score_pending()
+                if self.evictor.should_evict():
+                    await self.evictor.evict()
+            except Exception:
+                logger.exception("[Context] Background iteration failed")
 
     # ── CLI 交互 ──────────────────────────────────
 
@@ -399,6 +405,11 @@ class AetherAgent:
     async def stop(self):
         """停止所有模块"""
         logger.info("Stopping Aether Agent...")
+        active = [task for task in self.dispatcher.state.active_tasks.values() if not task.done()]
+        for task in active:
+            task.cancel()
+        if active:
+            await asyncio.gather(*active, return_exceptions=True)
         await self.audio.stop()
         self.osc.stop()
         try:

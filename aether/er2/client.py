@@ -42,6 +42,7 @@ class ER2Client(ER2Port):
         self._tool_call_handler: Callable[..., Awaitable[list]] | None = None
         self._tool_call_cancelled_handler: Callable[[list[str]], Awaitable] | None = None
         self._block_interceptor: Callable[..., Awaitable] | None = None
+        self._usage_callback: Callable[[object], None] | None = None
         self._connect_time: float = 0.0
 
     # ── 外部注入 ──────────────────────────────
@@ -61,6 +62,10 @@ class ER2Client(ER2Port):
     def set_block_interceptor(self, interceptor: Callable[..., Awaitable]):
         """设置输出块拦截器（由 Sub-agent Runtime 注入）"""
         self._block_interceptor = interceptor
+
+    def set_usage_callback(self, callback: Callable[[object], None]):
+        """设置 token 用量回调。"""
+        self._usage_callback = callback
 
     # ── 连接管理 ──────────────────────────────
 
@@ -105,12 +110,18 @@ class ER2Client(ER2Port):
         # 使用 AsyncExitStack 进入 asynccontextmanager，
         # 将 session 作为长期资源管理，在 close() 时才退出。
         self._exit_stack = contextlib.AsyncExitStack()
-        self.session = await self._exit_stack.enter_async_context(
-            self.client.aio.live.connect(
-                model=self.config.model,
-                config=live_config,
+        try:
+            self.session = await self._exit_stack.enter_async_context(
+                self.client.aio.live.connect(
+                    model=self.config.model,
+                    config=live_config,
+                )
             )
-        )
+        except Exception:
+            await self._exit_stack.aclose()
+            self._exit_stack = None
+            self.session = None
+            raise
         self._running = True
         self._connect_time = time.time()
         logger.info("[ER2] Connected successfully")
@@ -328,6 +339,8 @@ class ER2Client(ER2Port):
                         logger.debug(
                             "[ER2] Token usage: %s", chunk.usage_metadata
                         )
+                        if self._usage_callback:
+                            self._usage_callback(chunk.usage_metadata)
 
                 # receive() 一个 turn 结束后继续下一轮（不 break）
                 continue

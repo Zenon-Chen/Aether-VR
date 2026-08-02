@@ -113,7 +113,7 @@ class TestContextConfig:
     def test_defaults(self):
         cfg = ContextConfig()
         assert cfg.embedding_model == "gemini-embedding-001"
-        assert cfg.max_active_tokens == 102400
+        assert cfg.max_active_tokens == 100000
         assert cfg.heartbeat_interval == 30
         assert cfg.scoring_batch_size == 10
 

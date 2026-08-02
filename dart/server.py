@@ -16,7 +16,6 @@ import sys
 import time
 import random
 import asyncio
-import threading
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, asdict
 from pathlib import Path
@@ -55,6 +54,7 @@ DEVICE_STR = 'cuda'
 DEFAULT_BATCH_SIZE = 1
 DEFAULT_GUIDANCE = 5.0
 DEFAULT_RESPACING = ''
+MAX_SEGMENTS = 30
 DATASET_TYPE = 'babel'
 
 
@@ -73,7 +73,7 @@ class ModelStore:
         self.device = None
         self.loaded = False
         self.generating = False
-        self.lock = threading.Lock()
+        self.lock: Optional[asyncio.Lock] = None
 
 store = ModelStore()
 
@@ -122,6 +122,7 @@ async def lifespan(app: FastAPI):
         enforce_zero_beta=1,
     )
 
+    store.lock = asyncio.Lock()
     store.loaded = True
     elapsed = time.time() - t0
     print(f'[Server] Model loaded in {elapsed:.1f}s  device={device}')
@@ -350,9 +351,19 @@ async def generate(req: GenerateRequest):
     if not store.loaded:
         raise HTTPException(status_code=503, detail='Model not loaded yet')
 
-    if not store.lock.acquire(blocking=False):
+    try:
+        segment_count = sum(int(part.rsplit('*', 1)[1]) for part in req.text.split(','))
+    except (IndexError, ValueError):
+        raise HTTPException(status_code=400, detail='Prompt must use action*segments format')
+    if segment_count < 1 or segment_count > MAX_SEGMENTS:
+        raise HTTPException(status_code=400, detail=f'Total segments must be between 1 and {MAX_SEGMENTS}')
+
+    if store.lock is None:
+        store.lock = asyncio.Lock()
+    if store.lock.locked():
         raise HTTPException(status_code=429, detail='Another generation is in progress')
 
+    await store.lock.acquire()
     store.generating = True
     try:
         loop = asyncio.get_running_loop()
@@ -371,4 +382,5 @@ async def generate(req: GenerateRequest):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         store.generating = False
-        store.lock.release()
+        if store.lock.locked():
+            store.lock.release()

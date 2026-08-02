@@ -42,6 +42,8 @@ class DARTClient(MotionPort):
         self.config = config
         self.base_url = f"http://{config.host}:{config.port}"
         self._client: Optional[httpx.AsyncClient] = None
+        self._generate_lock = asyncio.Semaphore(1)
+        self.max_segments = 30
 
     # ------------------------------------------------------------------
     # 生命周期
@@ -140,6 +142,13 @@ class DARTClient(MotionPort):
             RuntimeError: 超过最大重试次数
         """
         client = self._ensure_client()
+        segments = 0
+        try:
+            segments = sum(int(part.rsplit("*", 1)[1]) for part in text.split(","))
+        except (IndexError, ValueError):
+            raise ValueError("DART prompt must use action*segments format")
+        if segments > self.max_segments:
+            raise ValueError(f"DART prompt exceeds max_segments={self.max_segments}")
         payload = {"text": text, "guidance_param": guidance_param}
 
         last_exc: Optional[Exception] = None
@@ -149,7 +158,11 @@ class DARTClient(MotionPort):
                     "[DART] 请求生成 (attempt %d/%d): text=%r, guidance=%.1f",
                     attempt, max_retries, text, guidance_param,
                 )
-                resp = await client.post("/generate", json=payload)
+                async with self._generate_lock:
+                    resp = await asyncio.wait_for(
+                        client.post("/generate", json=payload),
+                        timeout=self.config.timeout,
+                    )
                 resp.raise_for_status()
                 data: dict = resp.json()
 
@@ -160,7 +173,7 @@ class DARTClient(MotionPort):
                 )
                 return data
 
-            except httpx.TimeoutException as exc:
+            except (httpx.TimeoutException, asyncio.TimeoutError) as exc:
                 last_exc = exc
                 logger.warning(
                     "[DART] 生成超时 (attempt %d/%d): %s",

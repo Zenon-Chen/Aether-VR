@@ -18,7 +18,7 @@ class AudioStream:
     """TTS → 播放 的音频流（单队列，producer/consumer 两端可见）"""
 
     def __init__(self):
-        self._queue: asyncio.Queue = asyncio.Queue()
+        self._queue: asyncio.Queue = asyncio.Queue(maxsize=64)
 
     # ── 生产者接口（TTSEngine 使用）────────────────
 
