@@ -50,10 +50,16 @@ class ContextBlockStore(BlockRepository):
 
     def add_block(self, block: ContextBlock):
         """添加新块（embedding 可稍后异步填充）"""
+        previous = self.blocks.get(block.block_id)
+        if previous is not None:
+            self.total_active_tokens -= previous.token_estimate
         self.blocks[block.block_id] = block
         self.total_active_tokens += block.token_estimate
         if block.embedding is not None:
             self._add_to_faiss(block)
+
+    def adjust_token_count(self, delta: int) -> None:
+        self.total_active_tokens = max(0, self.total_active_tokens + delta)
 
     def _add_to_faiss(self, block: ContextBlock):
         """将块的 embedding 添加到 FAISS"""

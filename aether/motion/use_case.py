@@ -46,9 +46,10 @@ class MotionUseCase:
         logger.info("Generating motion: %s", prompt)
         try:
             result = await self._motion.generate(prompt)
-            if result and "poses" in result:
-                await self._renderer.play_motion(result)
-            return result or {}
+            if not result or not result.get("poses"):
+                return {"num_frames": 0, "error": "DART returned no motion data"}
+            await self._renderer.play_motion(result)
+            return result
         except Exception as exc:
             logger.error("Motion generation failed: %s", exc)
             return {"num_frames": 0, "error": str(exc)}

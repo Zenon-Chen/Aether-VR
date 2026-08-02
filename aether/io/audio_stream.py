@@ -26,6 +26,15 @@ class AudioStream:
         """放入一段 PCM 音频（24kHz, 16-bit, mono）"""
         await self._queue.put(pcm_data)
 
+    def produce_nowait(self, pcm_data: bytes) -> None:
+        """原子打断路径使用；满队列时丢弃最旧段以保持实时性。"""
+        if self._queue.full():
+            try:
+                self._queue.get_nowait()
+            except asyncio.QueueEmpty:
+                pass
+        self._queue.put_nowait(pcm_data)
+
     # ── 消费者接口（AudioPipeline 使用）────────────
 
     async def consume(self, timeout: float = 0.1) -> Optional[bytes]:

@@ -32,6 +32,9 @@ class InMemoryBlockRepository:
         return self._blocks
 
     def add_block(self, block: ContextBlock) -> None:
+        previous = self._blocks.get(block.block_id)
+        if previous is not None:
+            self._total_tokens -= previous.token_estimate
         self._blocks[block.block_id] = block
         self._total_tokens += block.token_estimate
 
@@ -39,6 +42,9 @@ class InMemoryBlockRepository:
         block = self._blocks.pop(block_id, None)
         if block is not None:
             self._total_tokens -= block.token_estimate
+
+    def adjust_token_count(self, delta: int) -> None:
+        self._total_tokens = max(0, self._total_tokens + delta)
 
     def search_similar(
         self, query_embedding: np.ndarray, top_k: int = 5
@@ -78,8 +84,10 @@ class InMemoryBlockRepository:
                 vector = await embed_fn(block.content)
                 block.embedding = np.asarray(vector, dtype=np.float32)
 
-        await asyncio.gather(*(embed(block) for block in pending))
-        return len(pending)
+        results = await asyncio.gather(
+            *(embed(block) for block in pending), return_exceptions=True
+        )
+        return sum(not isinstance(result, BaseException) for result in results)
 
     def get_summary(self) -> dict:
         return {

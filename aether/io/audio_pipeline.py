@@ -194,7 +194,7 @@ class AudioPipeline(AudioPort):
             )
         except Exception as exc:
             logger.error("[Audio] Failed to open input stream: %s", exc)
-            self._no_audio = True
+            self._input_stream = None
             return
 
     async def stop_input(self):
@@ -309,7 +309,7 @@ class AudioPipeline(AudioPort):
             )
         except Exception as exc:
             logger.error("[Audio] Failed to open output stream: %s", exc)
-            self._no_audio = True
+            self._output_stream = None
 
     def _output_callback(self, outdata: "np.ndarray", frames: int,
                          time_info, status):
@@ -498,13 +498,19 @@ class AudioPipeline(AudioPort):
         await self.start_input()
         await self.start_output()
 
-        # 启动后台循环
-        if not self._no_audio:
+        # 输入与输出独立降级：麦克风故障不应禁用 TTS 播放，反之亦然。
+        if self._input_stream is not None:
             self._input_task = asyncio.create_task(self.input_loop())
+        if self._output_stream is not None:
             self._output_task = asyncio.create_task(self.output_loop())
-            logger.info("[Audio] Pipeline started (input + output)")
-        else:
+        self._no_audio = self._input_stream is None and self._output_stream is None
+        if self._no_audio:
             logger.warning("[Audio] Pipeline started in no-audio mode")
+        else:
+            logger.info(
+                "[Audio] Pipeline started (input=%s, output=%s)",
+                self._input_stream is not None, self._output_stream is not None,
+            )
 
     async def stop(self):
         """停止所有音频流并清理资源"""

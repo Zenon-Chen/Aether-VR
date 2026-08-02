@@ -352,10 +352,14 @@ async def generate(req: GenerateRequest):
         raise HTTPException(status_code=503, detail='Model not loaded yet')
 
     try:
-        segment_count = sum(int(part.rsplit('*', 1)[1]) for part in req.text.split(','))
-    except (IndexError, ValueError):
-        raise HTTPException(status_code=400, detail='Prompt must use action*segments format')
-    if segment_count < 1 or segment_count > MAX_SEGMENTS:
+        parts = [part.rsplit('*', 1) for part in req.text.split(',')]
+        counts = [int(count) for action, count in parts if action.strip()]
+        if len(counts) != len(parts) or any(count < 1 for count in counts):
+            raise ValueError
+        segment_count = sum(counts)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail='Prompt must use non-empty action*positive_segments format')
+    if segment_count > MAX_SEGMENTS:
         raise HTTPException(status_code=400, detail=f'Total segments must be between 1 and {MAX_SEGMENTS}')
 
     if store.lock is None:
@@ -366,15 +370,16 @@ async def generate(req: GenerateRequest):
     await store.lock.acquire()
     store.generating = True
     try:
-        loop = asyncio.get_running_loop()
-        result = await loop.run_in_executor(
-            None,
-            lambda: generate_motion(
-                text_prompt=req.text,
-                batch_size=req.batch_size,
-                guidance_param=req.guidance_param,
-            ),
-        )
+        inference_task = asyncio.create_task(asyncio.to_thread(
+            generate_motion, req.text, req.batch_size, req.guidance_param
+        ))
+        try:
+            result = await asyncio.shield(inference_task)
+        except asyncio.CancelledError:
+            # GPU work in a thread cannot be cancelled. Keep the service lock until it
+            # really finishes, otherwise a disconnected client can cause overlap.
+            await inference_task
+            raise
         return GenerateResponse(**result)
     except Exception as e:
         import traceback

@@ -172,6 +172,7 @@ class OSCSender(OSCPort):
         self._stop_event = asyncio.Event()
         self._stop_event.set()  # 初始状态为「未播放」
         self._current_task: Optional[asyncio.Task] = None
+        self._play_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------
     # 连接
@@ -255,26 +256,22 @@ class OSCSender(OSCPort):
         return not self._stop_event.is_set()
 
     async def play_motion(self, motion_data: dict) -> None:
-        """异步播放动作序列（非阻塞，后台 Task）
-
-        Args:
-            motion_data: DART 返回的骨架数据 dict
-        """
-        if self._playing:
-            logger.warning("[OSC] Already playing, cancelling current motion")
+        """播放完整动作；新动作会先安全终止旧动作。"""
+        async with self._play_lock:
             old_task = self._current_task
-            self.stop()
-            # 等待旧 task 完全结束，避免 finally 块与新 task 交错
-            if old_task is not None:
-                try:
-                    await old_task
-                except (asyncio.CancelledError, Exception):
-                    pass
+            if old_task is not None and not old_task.done():
+                logger.warning("[OSC] Already playing, cancelling current motion")
+                old_task.cancel()
+                await asyncio.gather(old_task, return_exceptions=True)
+            self._stop_event.clear()
+            task = asyncio.create_task(self._motion_loop(motion_data))
+            self._current_task = task
 
-        self._stop_event.clear()
-        self._current_task = asyncio.create_task(
-            self._motion_loop(motion_data)
-        )
+        try:
+            await task
+        finally:
+            if self._current_task is task:
+                self._current_task = None
 
     async def _motion_loop(self, motion_data: dict) -> None:
         """核心播放循环：预计算 → 逐帧发送 → 帧间隔 sleep"""

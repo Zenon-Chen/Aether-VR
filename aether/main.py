@@ -44,7 +44,7 @@ class AetherAgent:
     ER2 ↔ ToolDispatcher ↔ (TTS / DART / RAG)
     AudioPipeline ↔ ER2（音频流）
     OSCSender ← DART（骨架数据）
-    ContextBlockStore ← ER2（上下文块）→ Scorer / Evictor / RAG
+    InMemoryBlockRepository ← ER2（上下文块）→ Scorer / Evictor / RAG
     HeartbeatGenerator → ER2（定期状态注入）
     """
 
@@ -74,6 +74,7 @@ class AetherAgent:
 
         self._running = False
         self._dart_available = False
+        self._interrupt_tasks: set[asyncio.Task] = set()
 
     # ══════════════════════════════════════════════
     # 启动
@@ -215,8 +216,10 @@ class AetherAgent:
         # play_filler_sound 是 async，需要在事件循环中调度
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self.dispatcher.cancel_pending([]))
-            loop.create_task(self.audio.play_filler_sound())
+            for coro in (self.dispatcher.cancel_pending([]), self.audio.play_filler_sound()):
+                task = loop.create_task(coro)
+                self._interrupt_tasks.add(task)
+                task.add_done_callback(self._interrupt_tasks.discard)
         except RuntimeError:
             pass  # 无运行中的事件循环，跳过垫音
 
@@ -406,18 +409,25 @@ class AetherAgent:
         """停止所有模块"""
         logger.info("Stopping Aether Agent...")
         active = [task for task in self.dispatcher.state.active_tasks.values() if not task.done()]
-        for task in active:
+        pending = active + [task for task in self._interrupt_tasks if not task.done()]
+        for task in pending:
             task.cancel()
-        if active:
-            await asyncio.gather(*active, return_exceptions=True)
-        await self.audio.stop()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._interrupt_tasks.clear()
+        try:
+            await self.audio.stop()
+        except Exception:
+            logger.exception("Audio shutdown failed")
         self.osc.stop()
         try:
             self.osc.send_idle_pose()
         except Exception:
             pass
-        await self.er2.close()
-        await self.dart.close()
+        try:
+            await self.er2.close()
+        finally:
+            await self.dart.close()
         logger.info("Aether Agent stopped")
 
 

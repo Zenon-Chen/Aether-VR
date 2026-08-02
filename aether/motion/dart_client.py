@@ -142,11 +142,14 @@ class DARTClient(MotionPort):
             RuntimeError: 超过最大重试次数
         """
         client = self._ensure_client()
-        segments = 0
         try:
-            segments = sum(int(part.rsplit("*", 1)[1]) for part in text.split(","))
-        except (IndexError, ValueError):
-            raise ValueError("DART prompt must use action*segments format")
+            parts = [part.rsplit("*", 1) for part in text.split(",")]
+            counts = [int(count) for action, count in parts if action.strip()]
+            if len(counts) != len(parts) or any(count < 1 for count in counts):
+                raise ValueError
+            segments = sum(counts)
+        except (TypeError, ValueError):
+            raise ValueError("DART prompt must use non-empty action*positive_segments format")
         if segments > self.max_segments:
             raise ValueError(f"DART prompt exceeds max_segments={self.max_segments}")
         payload = {"text": text, "guidance_param": guidance_param}

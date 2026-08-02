@@ -97,4 +97,4 @@ class TestInMemoryBlockRepository:
             assert scorer.should_score() is False  # 未达批量阈值
 
             # 驱逐器能看到 store token 数
-            assert evictor.should_evict() is False  # 10 < 102400
+            assert evictor.should_evict() is False  # 10 < 100000

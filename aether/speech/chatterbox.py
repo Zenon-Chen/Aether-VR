@@ -78,7 +78,7 @@ class ChatterboxEngine(BaseTTSEngine, TTSPort):
 
         # 在线程池中运行同步的模型推理
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             wav = await loop.run_in_executor(
                 None,
                 lambda: self.model.generate(

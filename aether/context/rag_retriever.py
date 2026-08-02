@@ -37,7 +37,7 @@ class RAGRetriever:
             return np.array(response.embeddings[0].values, dtype=np.float32)
         except Exception as e:
             logger.error("[RAG] Embedding failed: %s", e)
-            return np.zeros(self.embedding_dim, dtype=np.float32)
+            raise RuntimeError("embedding request failed") from e
 
     async def retrieve(self, query: str, max_tokens: int = 2000) -> str:
         """执行 RAG 召回
@@ -53,7 +53,10 @@ class RAGRetriever:
             return "[RECALLED MEMORY]\nNo memories available."
 
         # 1. 嵌入查询
-        query_embedding = await self.embed_text(query)
+        try:
+            query_embedding = await self.embed_text(query)
+        except RuntimeError:
+            return f"[RECALLED MEMORY]\nRetrieval temporarily unavailable for: {query}"
 
         # 2. FAISS 搜索（多取一些，后面按 token 限制筛选）
         candidates = self.store.search_similar(query_embedding, top_k=20)

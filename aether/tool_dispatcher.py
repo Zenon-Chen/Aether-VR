@@ -111,6 +111,9 @@ class ToolDispatcher(DispatcherPort):
                 self._run_and_respond(fc),
                 name=f"tool:{fc.name}:{fc.id}",
             )
+            previous = self.state.active_tasks.get(fc.id)
+            if previous is not None and not previous.done():
+                previous.cancel()
             self.state.active_tasks[fc.id] = task
             logger.info(
                 "[Dispatcher] Submitted %s (id=%s) as background task",
@@ -145,8 +148,9 @@ class ToolDispatcher(DispatcherPort):
                 response={"status": "error", "error": str(e)},
             )
         finally:
-            # 从活跃任务中移除
-            self.state.active_tasks.pop(fc_id, None)
+            # 仅移除自己，避免同 ID 的新任务被旧任务 finally 误删。
+            if self.state.active_tasks.get(fc_id) is asyncio.current_task():
+                self.state.active_tasks.pop(fc_id, None)
 
         # 通过回调异步回传结果
         if self._response_callback:
@@ -213,8 +217,12 @@ class ToolDispatcher(DispatcherPort):
         if self._tts_handler:
             task = asyncio.create_task(self._tts_handler(text, emotion, speech_rate))
             self.state.current_tts_task = task
-            await task
-            return {"status": "played", "text": text, "emotion": emotion}
+            try:
+                await task
+                return {"status": "played", "text": text, "emotion": emotion}
+            finally:
+                if self.state.current_tts_task is task:
+                    self.state.current_tts_task = None
         else:
             logger.warning("[Dispatcher] No TTS handler registered")
             return {"status": "no_handler"}
@@ -247,7 +255,8 @@ class ToolDispatcher(DispatcherPort):
             self.state.current_motion_task = task
             try:
                 result = await task
-                self.state.motion_state = MotionState.PLAYING
+                if self.state.current_motion_task is task:
+                    self.state.motion_state = MotionState.PLAYING
                 # 记录动作
                 self.state.recent_actions.append({
                     "action": action,
@@ -263,8 +272,9 @@ class ToolDispatcher(DispatcherPort):
                     "frames": result.get("num_frames", 0),
                 }
             finally:
-                self.state.current_motion_task = None
-                self.state.motion_state = MotionState.IDLE
+                if self.state.current_motion_task is task:
+                    self.state.current_motion_task = None
+                    self.state.motion_state = MotionState.IDLE
         else:
             logger.warning("[Dispatcher] No motion handler registered")
             self.state.motion_state = MotionState.IDLE

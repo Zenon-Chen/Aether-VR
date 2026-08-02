@@ -87,7 +87,8 @@ class TestMotionUseCase:
         uc = MotionUseCase(motion, renderer)
 
         result = await uc.execute("jump", 2.0)
-        assert result == {}  # None → {}（result or {}）
+        assert result["num_frames"] == 0
+        assert "no motion data" in result["error"]
         assert renderer.played == []
 
     def test_implements_ports(self):

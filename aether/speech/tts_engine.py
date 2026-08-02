@@ -126,8 +126,9 @@ class TTSEngine(BaseTTSEngine, TTSPort):
             tagged = self._build_tagged_text(segment, emotion, speech_rate, is_first=(i == 0))
             tagged_segments.append(tagged)
 
-        # 捕获本次代际；clear_queue 会原子推进代际使旧结果失效
+        # 每次合成都获得独立代际；新请求会让旧请求结果失效。
         async with self._generation_lock:
+            self._generation_id += 1
             current_gen = self._generation_id
 
         # 3. 并发调用 TTS（但按序入队）
@@ -137,21 +138,31 @@ class TTSEngine(BaseTTSEngine, TTSPort):
             tasks.append(task)
 
         # 按顺序等待并加入播放流
-        for i, task in enumerate(tasks):
-            try:
-                pcm_data = await task
-                if pcm_data is not None:
-                    # 检查与入队必须原子，避免 clear_queue 夹在两者之间。
-                    async with self._generation_lock:
-                        if current_gen != self._generation_id:
-                            raise _StaleGeneration()
-                        await self._stream.produce(pcm_data)
-                    logger.debug(f"[TTS] Segment {i+1}/{len(tasks)} queued")
-            except _StaleGeneration:
-                logger.debug(f"[TTS] Segment {i+1}/{len(tasks)} discarded (stale generation)")
-                break
-            except Exception as e:
-                logger.error(f"[TTS] Segment {i+1} failed: {e}")
+        try:
+            for i, task in enumerate(tasks):
+                try:
+                    pcm_data = await task
+                    if pcm_data is not None:
+                        # 检查与入队原子化；满队列丢弃最旧段保持实时性。
+                        async with self._generation_lock:
+                            if current_gen != self._generation_id:
+                                raise _StaleGeneration()
+                            self._stream.produce_nowait(pcm_data)
+                        logger.debug(f"[TTS] Segment {i+1}/{len(tasks)} queued")
+                except _StaleGeneration:
+                    logger.debug(f"[TTS] Segment {i+1}/{len(tasks)} discarded (stale generation)")
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error(f"[TTS] Segment {i+1} failed: {e}")
+        finally:
+            # 打断或失败后，取消仍在飞行的 API 调用，避免泄漏任务/配额。
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            if tasks:
+                await asyncio.gather(*tasks, return_exceptions=True)
 
         return f"synthesized {len(segments)} segments"
 

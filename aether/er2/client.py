@@ -246,12 +246,14 @@ class ER2Client(ER2Port):
         3. usage_metadata — token 用量日志
         4. 异常 — 触发自动重连
         """
+        reconnect_delay = 1.0
         while self._running:
             if not self.session:
                 logger.error("[ER2] receive_loop called without active session")
                 return
 
             try:
+                go_away_requested = False
                 async for chunk in self.session.receive():
                     # 1. 文本输出
                     if chunk.text:
@@ -331,7 +333,7 @@ class ER2Client(ER2Port):
                             "[ER2] Server go_away: time_left=%s, reconnecting...",
                             chunk.go_away.time_left,
                         )
-                        # 跳出当前 receive() 迭代，外层循环会触发 reconnect
+                        go_away_requested = True
                         break
 
                     # 6. Token 用量
@@ -342,12 +344,19 @@ class ER2Client(ER2Port):
                         if self._usage_callback:
                             self._usage_callback(chunk.usage_metadata)
 
-                # receive() 一个 turn 结束后继续下一轮（不 break）
+                # go_away 需要显式建立新会话；普通 turn 结束则继续接收。
+                if go_away_requested and self._running:
+                    await self.reconnect()
                 continue
 
             except Exception as e:
                 logger.error("[ER2] Receive loop error: %s", e)
-                if self._running:
-                    await self.reconnect()
-                else:
+                if not self._running:
                     break
+                try:
+                    await self.reconnect()
+                    reconnect_delay = 1.0
+                except Exception as reconnect_error:
+                    logger.error("[ER2] Reconnect failed: %s", reconnect_error)
+                    await asyncio.sleep(reconnect_delay)
+                    reconnect_delay = min(reconnect_delay * 2, 30.0)

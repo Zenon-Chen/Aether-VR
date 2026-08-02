@@ -27,7 +27,7 @@ class ContextEvictor:
         self.store = block_store
         self.client = genai.Client(api_key=api_key)
         self.model = context_config.scorer_model
-        self.max_tokens = context_config.max_active_tokens   # 102400
+        self.max_tokens = context_config.max_active_tokens   # 100000
         self._usage_metadata_tokens: Optional[int] = None
 
     def should_evict(self) -> bool:
@@ -99,7 +99,7 @@ class ContextEvictor:
                 block.content = f"[SUMMARY] {summary}"
                 new_tokens = self.store.estimate_token_count(block.content)
                 block.token_estimate = new_tokens
-                self.store.total_active_tokens -= (old_tokens - new_tokens)
+                self.store.adjust_token_count(new_tokens - old_tokens)
 
             except Exception as e:
                 logger.error("[Evictor] Summarization failed for block %s: %s", block.block_id, e)

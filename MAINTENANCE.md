@@ -9,7 +9,7 @@
 
 Aether 将大语言模型（Gemini ER2）、人体动作生成（DART）与语音合成（TTS）融合为统一的实时交互系统。
 
-### 三层服务架构
+### 三服务 + 编排层架构
 
 | 层级 | 服务 | 职责 |
 |------|------|------|
@@ -265,7 +265,7 @@ aether/
 ├── er2/           ← ER2 服务（对话 AI）
 ├── motion/        ← Motion 服务（动作生成 + OSC 输出）
 ├── speech/        ← Speech 服务（TTS 合成）
-├── io/            ← I/O 服务（音频输入输出）
+├── io/            ← I/O 适配器（音频输入输出）
 ├── context/       ← 上下文管理（RAG + 评分 + 驱逐）
 ├── main.py        ← 编排层（串联所有服务）
 └── protocols.py   ← Protocol 接口层（解耦）
@@ -398,7 +398,7 @@ Aether project/
 | 问题 | 说明 | 状态 |
 |------|------|------|
 | RAG embedding worker 待完整接线 | 嵌入计算目前按需调用，未实现后台 worker 批量嵌入 `_pending_embeddings` | 待优化 |
-| 上下文压缩策略 | ER2 侧 `context_window_compression` 配置为 8000 token 触发 / 4000 token 滑窗，需实测调优 | 待调优 |
+| 上下文压缩策略 | ER2 侧 `context_window_compression` 配置为 120000 token 触发 / 80000 token 滑窗，需实测调优 | 待调优 |
 
 ### 平台适配
 
