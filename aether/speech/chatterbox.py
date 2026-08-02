@@ -14,11 +14,12 @@ from typing import Optional
 from pathlib import Path
 
 from .base import BaseTTSEngine
+from ..protocols import TTSPort
 
 logger = logging.getLogger(__name__)
 
 
-class ChatterboxEngine(BaseTTSEngine):
+class ChatterboxEngine(BaseTTSEngine, TTSPort):
     """Chatterbox 语音克隆引擎（扩展功能）"""
 
     def __init__(self, device: str = "cuda", reference_audio: Optional[str] = None):

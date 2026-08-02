@@ -25,6 +25,8 @@ from typing import Optional, Callable, Awaitable
 import numpy as np
 
 from ..config import AudioConfig
+from ..io.audio_stream import AudioStream
+from ..protocols import AudioPort
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +40,7 @@ except ImportError:
     logger.warning("[Audio] sounddevice not installed, audio I/O disabled")
 
 
-class AudioPipeline:
+class AudioPipeline(AudioPort):
     """音频输入/输出管道
 
     管理麦克风采集、VAD 检测、音频播放，并与 ER2/TTS 引擎对接。
@@ -49,13 +51,17 @@ class AudioPipeline:
     # 输出回调每次请求的帧数
     _OUTPUT_BLOCKSIZE = 480
 
-    def __init__(self, config: AudioConfig):
+    def __init__(self, config: AudioConfig, stream: Optional[AudioStream] = None):
         self.config = config
         self.input_sample_rate: int = config.input_sample_rate   # 16000
         self.output_sample_rate: int = config.output_sample_rate  # 24000
         self.channels: int = config.channels                      # 1
         self.sample_width: int = config.sample_width              # 2 (16-bit)
         self.vad_threshold: float = config.vad_threshold          # 0.5
+
+        # 播放流：消费者端（TTSEngine 作为生产者共享同一实例）
+        # 默认自建；composition root 可注入共享 stream 消除桥接循环
+        self._stream = stream if stream is not None else AudioStream()
 
         # sounddevice 流
         self._input_stream: Optional["sd.RawInputStream"] = None
@@ -71,8 +77,7 @@ class AudioPipeline:
         self._on_speech_end: Optional[Callable] = None
         self._on_audio_chunk: Optional[Callable[[bytes], Awaitable]] = None
 
-        # 播放队列（线程安全：sounddevice 回调在独立线程）
-        self._playback_queue: asyncio.Queue = asyncio.Queue()
+        # 播放队列来自共享 AudioStream（线程安全：sounddevice 回调在独立线程）
         self._is_playing = False
         self._is_speaking = False  # 用户是否在说话
 
@@ -330,9 +335,9 @@ class AudioPipeline:
         )
 
     async def output_loop(self):
-        """音频输出主循环 — 从 TTS 播放队列获取音频，写入输出缓冲
+        """音频输出主循环 — 从共享播放流获取音频，写入输出缓冲
 
-        在后台 asyncio Task 中运行。持续从 _playback_queue 获取 PCM 数据，
+        在后台 asyncio Task 中运行。持续从 AudioStream 获取 PCM 数据，
         写入 _output_buffer 供 sounddevice 回调消费。
         """
         if self._no_audio or self._output_stream is None:
@@ -343,9 +348,7 @@ class AudioPipeline:
 
         while self._running:
             try:
-                pcm_data = await asyncio.wait_for(
-                    self._playback_queue.get(), timeout=0.1
-                )
+                pcm_data = await self._stream.consume(timeout=0.1)
                 if pcm_data:
                     with self._output_lock:
                         self._output_buffer.extend(pcm_data)
@@ -363,24 +366,20 @@ class AudioPipeline:
     # ── 播放控制 ──────────────────────────────────
 
     async def play_audio(self, pcm_data: bytes):
-        """将 PCM 音频数据加入播放队列
+        """将 PCM 音频数据放入共享播放流
 
         Args:
             pcm_data: 24kHz, 16-bit, mono PCM 数据
         """
-        await self._playback_queue.put(pcm_data)
+        await self._stream.produce(pcm_data)
 
     def stop_playback(self):
         """立即停止播放（打断场景）
 
-        清空播放队列 + 清空输出缓冲。
+        清空共享播放流 + 清空输出缓冲。
         """
         # 清空 asyncio 队列
-        while not self._playback_queue.empty():
-            try:
-                self._playback_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+        self._stream.clear()
 
         # 清空 sounddevice 回调缓冲
         with self._output_lock:

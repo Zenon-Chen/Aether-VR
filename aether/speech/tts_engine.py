@@ -17,6 +17,8 @@ from google import genai
 from google.genai import types
 
 from ..config import TTSConfig
+from ..io.audio_stream import AudioStream
+from ..protocols import TTSPort
 from .base import BaseTTSEngine
 
 logger = logging.getLogger(__name__)
@@ -70,22 +72,28 @@ SPLIT_MODES = {
 }
 
 
-class TTSEngine(BaseTTSEngine):
+class TTSEngine(BaseTTSEngine, TTSPort):
     """TTS 分段合成引擎（Gemini TTS API）"""
 
-    def __init__(self, config: TTSConfig):
+    def __init__(self, config: TTSConfig, stream: Optional[AudioStream] = None):
         self.config = config
         self.client = genai.Client(api_key=config.api_key)
         self.model = config.model  # gemini-3.1-flash-tts-preview
         self.voice_name = config.voice_name  # Kore
         self.max_segment_chars = config.max_segment_chars  # 30
 
-        # 音频播放队列
-        self.audio_queue: asyncio.Queue = asyncio.Queue()
+        # 音频流：生产端（AudioPipeline 作为消费者共享同一实例）
+        # 默认自建；composition root 可注入共享 stream 消除桥接循环
+        self._stream = stream if stream is not None else AudioStream()
         self._playing = False
 
         # 代际 ID，用于打断时使飞行中的 API 调用失效
         self._generation_id: int = 0
+
+    @property
+    def audio_queue(self) -> asyncio.Queue:
+        """播放队列（兼容别名 → stream 底层队列）"""
+        return self._stream.queue
 
     # ── 主入口 ────────────────────────────────────
 
@@ -127,12 +135,12 @@ class TTSEngine(BaseTTSEngine):
             task = asyncio.create_task(self._call_tts_api(tagged, current_gen))
             tasks.append(task)
 
-        # 按顺序等待并加入播放队列
+        # 按顺序等待并加入播放流
         for i, task in enumerate(tasks):
             try:
                 pcm_data = await task
                 if pcm_data is not None:
-                    await self.audio_queue.put(pcm_data)
+                    await self._stream.produce(pcm_data)
                     logger.debug(f"[TTS] Segment {i+1}/{len(tasks)} queued")
             except _StaleGeneration:
                 logger.debug(f"[TTS] Segment {i+1}/{len(tasks)} discarded (stale generation)")
@@ -314,19 +322,12 @@ class TTSEngine(BaseTTSEngine):
     def clear_queue(self):
         """清空播放队列（用于打断场景），同时递增代际 ID 使飞行中的 API 调用失效"""
         self._generation_id += 1
-        while not self.audio_queue.empty():
-            try:
-                self.audio_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
+        self._stream.clear()
         logger.info(f"[TTS] Queue cleared (generation -> {self._generation_id})")
 
     async def get_next_audio(self) -> Optional[bytes]:
-        """从播放队列获取下一段音频（供 audio_pipeline 使用）"""
-        try:
-            return await asyncio.wait_for(self.audio_queue.get(), timeout=0.1)
-        except asyncio.TimeoutError:
-            return None
+        """从播放流获取下一段音频（供 audio_pipeline 使用）"""
+        return await self._stream.consume()
 
     # ── 调试工具 ──────────────────────────────────
 

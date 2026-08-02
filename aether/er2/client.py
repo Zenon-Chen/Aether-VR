@@ -16,6 +16,7 @@ from google import genai
 from google.genai import types
 
 from ..config import ER2Config
+from ..protocols import ER2Port
 from .prompts import SYSTEM_INSTRUCTION, TOOL_DECLARATIONS
 
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 
-class ER2Client:
+class ER2Client(ER2Port):
     """ER2 Streaming Live API 客户端
 
     通过 google-genai SDK 的 async Live API 与 ER2 Streaming 模型交互。
@@ -79,9 +80,12 @@ class ER2Client:
             "system_instruction": SYSTEM_INSTRUCTION,
             "tools": TOOL_DECLARATIONS,
             # 上下文窗口压缩：防止长对话超出 token 限制
+            # 触发/目标 token 数来自 config（compression_trigger_tokens / target_tokens）
             "context_window_compression": types.ContextWindowCompressionConfig(
-                trigger_tokens=8000,
-                sliding_window=types.SlidingWindow(target_tokens=4000),
+                trigger_tokens=self.config.compression_trigger_tokens,
+                sliding_window=types.SlidingWindow(
+                    target_tokens=self.config.compression_target_tokens
+                ),
             ),
             # 输入音频转写：自动检测语言
             "input_audio_transcription": types.AudioTranscriptionConfig(),

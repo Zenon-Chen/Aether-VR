@@ -22,11 +22,12 @@ except ImportError:
     httpx = None  # type: ignore[assignment]
 
 from ..config import DARTConfig
+from ..protocols import MotionPort
 
 logger = logging.getLogger(__name__)
 
 
-class DARTClient:
+class DARTClient(MotionPort):
     """DART 动作生成客户端
 
     使用 httpx.AsyncClient 连接池复用 TCP 连接，

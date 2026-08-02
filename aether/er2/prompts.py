@@ -6,6 +6,8 @@
 
 from google.genai import types
 
+from ..constants import EMOTIONS, SPEECH_RATES
+
 # ──────────────────────────────────────────────
 # 自然对话系统提示词
 # ──────────────────────────────────────────────
@@ -71,16 +73,12 @@ TOOL_DECLARATIONS = [
                         ),
                         "emotion": types.Schema(
                             type=types.Type.STRING,
-                            enum=[
-                                "neutral", "happy", "sad", "angry", "amused",
-                                "curious", "worried", "enthusiastic", "sarcastic",
-                                "thinking", "apologetic", "surprised",
-                            ],
+                            enum=list(EMOTIONS),
                             description="当前情绪状态，用于控制语音语调",
                         ),
                         "speech_rate": types.Schema(
                             type=types.Type.STRING,
-                            enum=["slow", "normal", "fast"],
+                            enum=list(SPEECH_RATES),
                             description=(
                                 "语速。思考时用slow，正常对话用normal，紧急时用fast"
                             ),

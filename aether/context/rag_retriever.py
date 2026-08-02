@@ -6,7 +6,8 @@ import numpy as np
 from google import genai
 
 from ..config import ContextConfig
-from .block_store import ContextBlock, ContextBlockStore
+from .block_store import ContextBlock
+from .ports import BlockRepository
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ class RAGRetriever:
     FAISS top-K 搜索，贪心选择直到接近 max_tokens。
     """
 
-    def __init__(self, context_config: ContextConfig, block_store: ContextBlockStore, api_key: str):
+    def __init__(self, context_config: ContextConfig, block_store: BlockRepository, api_key: str):
         self.config = context_config
         self.store = block_store
         self.client = genai.Client(api_key=api_key)

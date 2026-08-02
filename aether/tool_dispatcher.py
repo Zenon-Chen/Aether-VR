@@ -18,18 +18,20 @@ from enum import Enum
 
 from google.genai import types
 
+from .constants import (
+    EMOTIONS,
+    SPEECH_RATES,
+    TEXT_MAX_LENGTH,
+    MOTION_DURATION_MIN,
+    MOTION_DURATION_MAX,
+)
+from .protocols import DispatcherPort
+
 logger = logging.getLogger(__name__)
 
-# ── 合法枚举值 ───────────────────────────────
-VALID_EMOTIONS = {
-    "neutral", "happy", "sad", "angry", "amused",
-    "curious", "worried", "enthusiastic", "sarcastic",
-    "thinking", "apologetic", "surprised",
-}
-VALID_SPEECH_RATES = {"slow", "normal", "fast"}
-MOTION_DURATION_MIN = 0.5
-MOTION_DURATION_MAX = 10.0
-TEXT_MAX_LENGTH = 200
+# ── 合法枚举值（单一来源：aether/constants.py）────
+VALID_EMOTIONS = frozenset(EMOTIONS)
+VALID_SPEECH_RATES = frozenset(SPEECH_RATES)
 
 
 class MotionState(Enum):
@@ -51,7 +53,7 @@ class DispatcherState:
     active_tasks: dict = field(default_factory=dict)
 
 
-class ToolDispatcher:
+class ToolDispatcher(DispatcherPort):
     """ER2 函数调用分发器
 
     通过 set_xxx_handler() 注入外部处理器，

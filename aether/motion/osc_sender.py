@@ -22,6 +22,7 @@ except ImportError:
 import numpy as np
 
 from ..config import OSCConfig
+from ..protocols import OSCPort
 
 logger = logging.getLogger(__name__)
 
@@ -153,7 +154,7 @@ def _build_frame_messages(
 # OSCSender
 # ======================================================================
 
-class OSCSender:
+class OSCSender(OSCPort):
     """VRChat OSC 骨骼数据发送器
 
     使用 python-osc 的 SimpleUDPClient 发送 OSC 消息。
@@ -296,7 +297,7 @@ class OSCSender:
             return
 
         # 2) 可选：帧率插值平滑过渡（src_fps → target_fps）
-        target_fps = self.config.target_fps if hasattr(self.config, 'target_fps') else framerate
+        target_fps = self.config.target_fps
         if framerate < target_fps:
             logger.info(
                 "[OSC] Interpolating frames from %d fps to %d fps",

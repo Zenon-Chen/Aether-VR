@@ -4,7 +4,8 @@ from .block_store import ContextBlock, ContextBlockStore
 from .importance_scorer import ImportanceScorer
 from .evictor import ContextEvictor
 from .rag_retriever import RAGRetriever
-from .heartbeat import HeartbeatGenerator, TaskState
+from .heartbeat import HeartbeatGenerator, AgentState
+from .memory import InMemoryBlockRepository
 
 __all__ = [
     "ContextBlock",
@@ -13,5 +14,6 @@ __all__ = [
     "ContextEvictor",
     "RAGRetriever",
     "HeartbeatGenerator",
-    "TaskState",
+    "AgentState",
+    "InMemoryBlockRepository",
 ]

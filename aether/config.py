@@ -52,6 +52,7 @@ class OSCConfig(BaseModel):
     host: str = "127.0.0.1"
     port: int = 9000
     avatar_prefix: str = "/avatar/parameters"
+    target_fps: int = 30  # 播放帧率插值目标；DART 帧率低于此值时插值平滑
 
 
 class AudioConfig(BaseModel):

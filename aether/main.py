@@ -19,7 +19,9 @@ from .logging_config import setup_logging
 from .er2 import ER2Client
 from .tool_dispatcher import ToolDispatcher
 from .motion import DARTClient, OSCSender
+from .motion.use_case import MotionUseCase
 from .io import AudioPipeline
+from .io.audio_stream import AudioStream
 from .speech import TTSEngine
 from .context import (
     ContextBlock,
@@ -28,7 +30,9 @@ from .context import (
     ContextEvictor,
     RAGRetriever,
     HeartbeatGenerator,
+    AgentState,
 )
+from .tool_dispatcher import MotionState
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +51,19 @@ class AetherAgent:
     def __init__(self, config: AetherConfig):
         self.config = config
 
+        # ── 音频流：TTS 生产端 ↔ AudioPipeline 消费端 共享同一实例 ──
+        self.audio_stream = AudioStream()
+
         # ── 核心模块 ──────────────────────────────
         self.er2 = ER2Client(config.er2)
         self.dispatcher = ToolDispatcher()
         self.dart = DARTClient(config.dart)
         self.osc = OSCSender(config.osc)
-        self.audio = AudioPipeline(config.audio)
-        self.tts = TTSEngine(config.tts)
+        self.audio = AudioPipeline(config.audio, self.audio_stream)
+        self.tts = TTSEngine(config.tts, self.audio_stream)
+
+        # ── 应用用例 ──────────────────────────────
+        self.motion_use_case = MotionUseCase(self.dart, self.osc, config.dart)
 
         # ── 上下文管理 ────────────────────────────
         self.block_store = ContextBlockStore(config.context.embedding_dim)
@@ -125,40 +135,23 @@ class AetherAgent:
     def _wire_handlers(self):
         """连接各模块的处理器到 ToolDispatcher"""
 
-        # TTS handler: dispatcher → tts_engine（音频入 tts.audio_queue）
+        # TTS handler: dispatcher → tts_engine（音频入 tts.audio_stream）
         async def tts_handler(text: str, emotion: str = "neutral",
                               speech_rate: str = "normal"):
             result = await self.tts.synthesize(text, emotion, speech_rate)
             return result
 
-        # Motion handler: dispatcher → dart_client → osc_sender
+        # Motion handler: dispatcher → motion_use_case（DART 生成 → OSC 播放）
         async def motion_handler(action: str, duration: float = 2.0):
-            if not self._dart_available:
-                logger.warning("Motion skipped: DART service unavailable")
-                return {"num_frames": 0, "error": "DART service unavailable"}
-            prompt = DARTClient.format_prompt(action, duration)
-            logger.info("Generating motion: %s", prompt)
-            try:
-                result = await self.dart.generate(prompt)
-                if result and "poses" in result:
-                    await self.osc.play_motion(result)
-                return result or {}
-            except Exception as exc:
-                logger.error("Motion generation failed: %s", exc)
-                return {"num_frames": 0, "error": str(exc)}
+            return await self.motion_use_case.execute(action, duration)
 
         # Memory handler: dispatcher → rag_retriever
         async def memory_handler(query: str, max_tokens: int = 2000):
             return await self.rag.retrieve(query, max_tokens)
 
-        # Status handler: dispatcher → 日志 + 心跳更新
+        # Status handler: dispatcher → 日志（状态已由 dispatcher 统一维护）
         async def status_handler(status_type: str, detail: str):
             logger.info("Status: %s - %s", status_type, detail)
-            # 同步更新心跳中的任务状态
-            self.heartbeat.update_from_tool_call(
-                "report_status",
-                {"status_type": status_type, "detail": detail},
-            )
 
         self.dispatcher.set_tts_handler(tts_handler)
         self.dispatcher.set_motion_handler(motion_handler)
@@ -189,7 +182,6 @@ class AetherAgent:
             )
             self.block_store.add_block(block)
             self.scorer.queue_for_scoring(block)
-            self.heartbeat.update_from_text(text)
 
         # 提取工具调用（tool_call 在 LiveServerMessage 顶层，不在 server_content 里）
         if hasattr(chunk, "tool_call") and chunk.tool_call:
@@ -203,10 +195,6 @@ class AetherAgent:
                 )
                 self.block_store.add_block(block)
                 self.scorer.queue_for_scoring(block)
-                # 更新心跳中的动作/情绪状态
-                self.heartbeat.update_from_tool_call(
-                    fc.name, dict(fc.args) if fc.args else {}
-                )
 
     def _on_speech_start(self):
         """用户开始说话 — 打断处理（同步回调）
@@ -247,12 +235,12 @@ class AetherAgent:
         await self.start()
 
         # 后台任务列表
-        # 注：AudioPipeline.start() 已创建 input_loop / output_loop 任务
+        # 注：AudioPipeline.start() 已创建 input_loop / output_loop 任务，
+        #     TTS→播放 由共享 AudioStream 直连，无需桥接任务
         tasks = [
             asyncio.create_task(self.er2.receive_loop(), name="er2_receive"),
             asyncio.create_task(self._heartbeat_loop(), name="heartbeat"),
             asyncio.create_task(self._context_management_loop(), name="context_mgmt"),
-            asyncio.create_task(self._tts_bridge_loop(), name="tts_bridge"),
         ]
 
         try:
@@ -268,25 +256,33 @@ class AetherAgent:
             await self.stop()
 
     async def _heartbeat_loop(self):
-        """心跳循环 — 定期向 ER2 注入世界状态"""
+        """心跳循环 — 定期向 ER2 注入世界状态
+
+        AgentState 由 dispatcher.state 投影而来（单一状态源），
+        HeartbeatGenerator 只做纯函数投影。
+        """
         while self._running:
             await asyncio.sleep(1)
             if self.heartbeat.should_send():
-                # 同步 dispatcher 的动作状态到心跳
+                # 从 dispatcher 状态投影 AgentState（单一事实来源）
                 recent = self.dispatcher.state.recent_actions[-3:]
-                self.heartbeat.task_state.recent_actions.clear()
-                for action_info in recent:
-                    if isinstance(action_info, dict):
-                        self.heartbeat.task_state.recent_actions.append(
-                            action_info.get("action", "unknown")
-                        )
-                    else:
-                        self.heartbeat.task_state.recent_actions.append(str(action_info))
-                self.heartbeat.task_state.emotion_state = (
-                    self.dispatcher.state.emotion_state
+                recent_actions = tuple(
+                    a.get("action", "unknown") if isinstance(a, dict) else str(a)
+                    for a in recent
+                )
+                state = AgentState(
+                    current_task=(
+                        f"executing: {recent_actions[-1]}"
+                        if self.dispatcher.state.motion_state
+                        in (MotionState.GENERATING, MotionState.PLAYING)
+                        and recent_actions
+                        else "idle"
+                    ),
+                    recent_actions=recent_actions,
+                    emotion_state=self.dispatcher.state.emotion_state,
                 )
 
-                msg = self.heartbeat.generate()
+                msg = self.heartbeat.generate(state)
                 if msg:
                     await self.er2.send_heartbeat(msg)
                     logger.debug("[Heartbeat] %s...", msg[:80])
@@ -303,17 +299,6 @@ class AetherAgent:
             # 驱逐检查
             if self.evictor.should_evict():
                 await self.evictor.evict()
-
-    async def _tts_bridge_loop(self):
-        """TTS → AudioPipeline 桥接循环
-
-        从 TTSEngine.audio_queue 获取 PCM 数据，
-        转移到 AudioPipeline._playback_queue 供 sounddevice 播放。
-        """
-        while self._running:
-            pcm = await self.tts.get_next_audio()
-            if pcm:
-                await self.audio.play_audio(pcm)
 
     # ── CLI 交互 ──────────────────────────────────
 

@@ -7,16 +7,16 @@ from logging.handlers import RotatingFileHandler
 
 
 # 每个模块不同的颜色（ANSI 转义码）
+# key 必须与真实 logger 名匹配（logging.getLogger(__name__) 的结果）
 MODULE_COLORS = {
-    "aether.er2_client": "\033[36m",      # 青色 - ER2
-    "aether.tool_dispatcher": "\033[33m",  # 黄色 - 分发器
-    "aether.dart_client": "\033[35m",      # 紫色 - DART
-    "aether.tts_engine": "\033[32m",       # 绿色 - TTS（向后兼容）
-    "aether.audio": "\033[32m",            # 绿色 - TTS 音频子包
-    "aether.audio_pipeline": "\033[32m",   # 绿色 - 音频管道
-    "aether.osc_sender": "\033[34m",       # 蓝色 - OSC
-    "aether.context": "\033[31m",          # 红色 - 上下文管理
-    "aether.main": "\033[37m",             # 白色 - 主程序
+    "aether.er2.client": "\033[36m",          # 青色 - ER2
+    "aether.tool_dispatcher": "\033[33m",     # 黄色 - 分发器
+    "aether.motion.dart_client": "\033[35m",  # 紫色 - DART
+    "aether.speech": "\033[32m",              # 绿色 - TTS 语音
+    "aether.io.audio_pipeline": "\033[32m",   # 绿色 - 音频管道
+    "aether.motion.osc_sender": "\033[34m",   # 蓝色 - OSC
+    "aether.context": "\033[31m",             # 红色 - 上下文管理
+    "aether.main": "\033[37m",                # 白色 - 主程序
 }
 RESET = "\033[0m"
 

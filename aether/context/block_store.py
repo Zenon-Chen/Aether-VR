@@ -8,6 +8,8 @@ import logging
 
 import tiktoken
 
+from .ports import BlockRepository
+
 logger = logging.getLogger(__name__)
 
 
@@ -25,8 +27,8 @@ class ContextBlock:
     metadata: dict = field(default_factory=dict)
 
 
-class ContextBlockStore:
-    """上下文块存储"""
+class ContextBlockStore(BlockRepository):
+    """上下文块存储（FAISS 实现）"""
 
     def __init__(self, embedding_dim: int = 768):
         self.embedding_dim = embedding_dim

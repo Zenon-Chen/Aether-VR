@@ -226,7 +226,7 @@ class TestProtocolsInterface:
 
 
 class TestHeartbeatGenerator:
-    """Test HeartbeatGenerator state tracking."""
+    """Test HeartbeatGenerator pure-function state projection."""
 
     def test_init(self):
         from aether.context.heartbeat import HeartbeatGenerator
@@ -239,36 +239,45 @@ class TestHeartbeatGenerator:
         assert hb.should_send() is True
 
     def test_generate_returns_message(self):
-        from aether.context.heartbeat import HeartbeatGenerator
+        from aether.context.heartbeat import HeartbeatGenerator, AgentState
         hb = HeartbeatGenerator(interval_seconds=0)
-        msg = hb.generate()
+        msg = hb.generate(AgentState())
         assert msg is not None
         assert "WORLD STATE UPDATE" in msg
 
     def test_generate_deduplicates(self):
-        from aether.context.heartbeat import HeartbeatGenerator
+        from aether.context.heartbeat import HeartbeatGenerator, AgentState
         hb = HeartbeatGenerator(interval_seconds=0)
-        msg1 = hb.generate()
+        msg1 = hb.generate(AgentState())
         # Same state, same hash -> should return None
-        msg2 = hb.generate()
+        msg2 = hb.generate(AgentState())
         assert msg2 is None
 
-    def test_update_from_tool_call_motion(self):
-        from aether.context.heartbeat import HeartbeatGenerator
-        hb = HeartbeatGenerator()
-        hb.update_from_tool_call("execute_motion", {"action": "walk forward"})
-        assert "walk forward" in hb.task_state.recent_actions
-        assert "walk forward" in hb.task_state.current_task
+    def test_generate_reflects_state(self):
+        from aether.context.heartbeat import HeartbeatGenerator, AgentState
+        hb = HeartbeatGenerator(interval_seconds=0)
+        state = AgentState(
+            current_task="executing: walk forward",
+            recent_actions=("walk forward", "wave hand"),
+            emotion_state="happy",
+        )
+        msg = hb.generate(state)
+        assert "walk forward" in msg
+        assert "happy" in msg
 
-    def test_update_from_tool_call_status(self):
-        from aether.context.heartbeat import HeartbeatGenerator
-        hb = HeartbeatGenerator()
-        hb.update_from_tool_call("report_status", {"status_type": "motion_complete"})
-        assert hb.task_state.current_task == "idle"
+    def test_generate_emits_new_state_after_change(self):
+        from aether.context.heartbeat import HeartbeatGenerator, AgentState
+        hb = HeartbeatGenerator(interval_seconds=0)
+        assert hb.generate(AgentState()) is not None
+        changed = AgentState(current_task="executing: dance", recent_actions=("dance",))
+        msg2 = hb.generate(changed)
+        assert msg2 is not None
+        assert "dance" in msg2
 
-    def test_task_state_defaults(self):
-        from aether.context.heartbeat import TaskState
-        ts = TaskState()
+    def test_agent_state_defaults(self):
+        from aether.context.heartbeat import AgentState
+        ts = AgentState()
         assert ts.current_task == "idle"
         assert ts.emotion_state == "neutral"
         assert ts.environment_summary == "Unknown environment"
+        assert ts.recent_actions == ()
