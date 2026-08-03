@@ -1,46 +1,113 @@
-# Aether VR Agent 默认配置文件
+# Aether 配置
 # API Key 通过 GEMINI_API_KEY 环境变量设置，不要写入此文件
 
-er2:
+# ── 感知采集 ──────────────────────────────────
+capture:
+  enabled: true
+  video_fps: 1.0          # 1 秒 1 张，永不停止
+  jpeg_quality: 70
+  max_width: 1024
+  monitor: 1              # 1 = 主显示器
+  input_sample_rate: 16000
+  chunk_ms: 100           # 100ms PCM 块，永不停止
+
+# ── 小脑：ER2 运动编排 ────────────────────────
+cerebellum:
   model: "gemini-robotics-er-2-streaming-preview"
-  # api_key: 通过 GEMINI_API_KEY 环境变量设置
   response_modalities: ["TEXT"]
-  context_window_tokens: 128000
   compression_trigger_tokens: 120000
   compression_target_tokens: 80000
+  max_plan_steps: 6
+  max_plan_seconds: 5.0
 
-tts:
+# ── 大脑：人格与观察（阶段 2）────────────────
+brain:
+  enabled: false
+  model: "gemini-3.5-flash-lite"
+  interval_s: 1.5
+  max_output_tokens: 512
+  context_limit_tokens: 500000
+  evict_target_tokens: 350000     # 驱逐滞回，避免频繁触发
+
+# ── 书记官：长期记忆（阶段 2）────────────────
+scribe:
+  enabled: false
+  batch_size: 10                  # 积攒 N 块再批量标记重要性
+  db_path: "data/memory.sqlite3"
+
+# ── 语音 ──────────────────────────────────────
+speech:
   model: "gemini-3.1-flash-tts-preview"
   voice_name: "Kore"
   max_segment_chars: 30
+  output_sample_rate: 24000
+  output_device: null             # 虚拟声卡名称，如 "CABLE Input"
+  fallback_sound: "assets/filler.wav"
 
+# ── DART 动作生成（WSL2）──────────────────────
 dart:
-  host: "localhost"
+  host: "127.0.0.1"
   port: 8900
-  timeout: 30
+  timeout_s: 60.0
 
+# ── 姿态桥：DART → SteamVR 六设备 ─────────────
+posture:
+  enabled: true
+  bridge_host: "127.0.0.1"
+  bridge_port: 4242               # 与 driver.cpp kPort 一致，改动需同步 C++
+  keepalive_fps: 45.0             # 必须快于驱动 1 秒失联阈值
+  blend_s: 0.3                    # 段间与来源切换插值
+  idle_pose: "stand naturally*1"
+
+# ── VRChat OSC ────────────────────────────────
 osc:
   host: "127.0.0.1"
   port: 9000
-  avatar_prefix: "/avatar/parameters"
-  target_fps: 30  # 播放帧率插值目标；DART 帧率低于此值时插值平滑
+  parameter_prefix: "/avatar/parameters"
+  input_prefix: "/input"
 
-audio:
-  input_sample_rate: 16000
-  output_sample_rate: 24000
-  channels: 1
-  sample_width: 2
-  vad_threshold: 0.5
+# ── 预录动作与表情 ────────────────────────────
+# 注意：OSC Avatar Parameters 只能传 int/float/bool，
+#       骨骼级控制必须走 posture 的 SteamVR 路径
+avatar:
+  action_parameter: "ActionID"
+  expression_parameter: "Expression"
+  actions:
+    idle: 0
+    wave: 1
+    nod: 2
+    shake_head: 3
+    bow: 4
+    clap: 5
+    point: 6
+    think: 7
+    sit: 8
+    stand: 9
+  action_durations:
+    wave: 1.8
+    nod: 1.0
+    shake_head: 1.2
+    bow: 2.0
+    clap: 1.5
+    point: 1.2
+    think: 2.5
+    sit: 2.0
+    stand: 2.0
+  full_body_actions: ["bow", "sit", "stand"]
+  expressions:
+    neutral: 0
+    smile: 1
+    surprised: 2
+    sad: 3
+    angry: 4
 
-context:
-  embedding_model: "gemini-embedding-001"
-  embedding_dim: 768
-  scorer_model: "gemini-2.0-flash"
-  max_active_tokens: 100000
-  heartbeat_interval: 30
-  scoring_interval: 30
-  scoring_batch_size: 10
+# ── 移动 ──────────────────────────────────────
+locomotion:
+  max_duration_s: 3.0
+  watchdog_s: 5.0                 # 硬保险：超时强制归零
+  pulse_s: 0.4                    # 走-看-走 脉冲
 
+# ── 日志 ──────────────────────────────────────
 log:
   level: "INFO"
   file: "logs/aether.log"

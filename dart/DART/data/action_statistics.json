@@ -1,0 +1,1187 @@
+{
+    "walk": {
+        "total_weight": 1,
+        "total_len": 17994.05799999998,
+        "weight": 5.55739011178024e-05
+    },
+    "transition": {
+        "total_weight": 1,
+        "total_len": 8586.994000000017,
+        "weight": 0.00011645518792723018
+    },
+    "hand movements": {
+        "total_weight": 1,
+        "total_len": 6972.7250000000095,
+        "weight": 0.0001434159528735177
+    },
+    "stand": {
+        "total_weight": 1,
+        "total_len": 6546.02700000002,
+        "weight": 0.00015276441725645143
+    },
+    "arm movements": {
+        "total_weight": 1,
+        "total_len": 4905.190000000009,
+        "weight": 0.00020386570143052528
+    },
+    "interact with/use object": {
+        "total_weight": 1,
+        "total_len": 4486.057999999996,
+        "weight": 0.00022291285578563647
+    },
+    "sit": {
+        "total_weight": 1,
+        "total_len": 3711.322000000001,
+        "weight": 0.0002694457662256198
+    },
+    "circular movement": {
+        "total_weight": 1,
+        "total_len": 3438.5320000000024,
+        "weight": 0.0002908217809227889
+    },
+    "t pose": {
+        "total_weight": 1,
+        "total_len": 3187.8369999999995,
+        "weight": 0.00031369232492125545
+    },
+    "raising body part": {
+        "total_weight": 1,
+        "total_len": 2779.6649999999986,
+        "weight": 0.0003597555820575503
+    },
+    "turn": {
+        "total_weight": 1,
+        "total_len": 2718.495999999999,
+        "weight": 0.00036785045848881156
+    },
+    "backwards movement": {
+        "total_weight": 1,
+        "total_len": 2520.893999999999,
+        "weight": 0.00039668466821691053
+    },
+    "leg movements": {
+        "total_weight": 1,
+        "total_len": 2259.0019999999995,
+        "weight": 0.000442673357526908
+    },
+    "step": {
+        "total_weight": 1,
+        "total_len": 2257.397999999996,
+        "weight": 0.00044298790022849396
+    },
+    "jog": {
+        "total_weight": 1,
+        "total_len": 2003.9700000000003,
+        "weight": 0.0004990094662095739
+    },
+    "look": {
+        "total_weight": 1,
+        "total_len": 1961.484,
+        "weight": 0.0005098180765175755
+    },
+    "dance": {
+        "total_weight": 1,
+        "total_len": 1925.2710000000009,
+        "weight": 0.0005194073977118025
+    },
+    "stretch": {
+        "total_weight": 1,
+        "total_len": 1771.0889999999981,
+        "weight": 0.0005646243638800767
+    },
+    "gesture": {
+        "total_weight": 1,
+        "total_len": 1653.2670000000003,
+        "weight": 0.0006048629773654224
+    },
+    "forward movement": {
+        "total_weight": 1,
+        "total_len": 1651.8149999999987,
+        "weight": 0.0006053946719214929
+    },
+    "jump": {
+        "total_weight": 1,
+        "total_len": 1605.8970000000008,
+        "weight": 0.0006227049430941084
+    },
+    "touching body part": {
+        "total_weight": 1,
+        "total_len": 1485.100999999999,
+        "weight": 0.0006733548762003397
+    },
+    "bend": {
+        "total_weight": 1,
+        "total_len": 1316.811000000001,
+        "weight": 0.0007594104241231272
+    },
+    "clean something": {
+        "total_weight": 1,
+        "total_len": 1261.4709999999995,
+        "weight": 0.0007927253182990337
+    },
+    "perform": {
+        "total_weight": 1,
+        "total_len": 1228.5429999999997,
+        "weight": 0.0008139723233130629
+    },
+    "touch object": {
+        "total_weight": 1,
+        "total_len": 1216.904,
+        "weight": 0.0008217575092201193
+    },
+    "sideways movement": {
+        "total_weight": 1,
+        "total_len": 1175.5150000000003,
+        "weight": 0.0008506909737434229
+    },
+    "head movements": {
+        "total_weight": 1,
+        "total_len": 983.4580000000002,
+        "weight": 0.0010168202404169774
+    },
+    "move up/down incline": {
+        "total_weight": 1,
+        "total_len": 980.4839999999992,
+        "weight": 0.0010199044553506236
+    },
+    "throw": {
+        "total_weight": 1,
+        "total_len": 904.0589999999987,
+        "weight": 0.0011061224986422362
+    },
+    "foot movements": {
+        "total_weight": 1,
+        "total_len": 883.5159999999996,
+        "weight": 0.001131841415435601
+    },
+    "kick": {
+        "total_weight": 1,
+        "total_len": 866.3979999999993,
+        "weight": 0.0011542039570728473
+    },
+    "lowering body part": {
+        "total_weight": 1,
+        "total_len": 762.718,
+        "weight": 0.0013111005640354628
+    },
+    "take/pick something up": {
+        "total_weight": 1,
+        "total_len": 759.3030000000007,
+        "weight": 0.0013169972988385389
+    },
+    "place something": {
+        "total_weight": 1,
+        "total_len": 739.3709999999995,
+        "weight": 0.0013525009771819568
+    },
+    "exercise/training": {
+        "total_weight": 1,
+        "total_len": 735.1059999999998,
+        "weight": 0.0013603480314403641
+    },
+    "wave": {
+        "total_weight": 1,
+        "total_len": 719.931,
+        "weight": 0.0013890220034975572
+    },
+    "swing body part": {
+        "total_weight": 1,
+        "total_len": 700.6209999999999,
+        "weight": 0.0014273052049538911
+    },
+    "move something": {
+        "total_weight": 1,
+        "total_len": 699.3139999999994,
+        "weight": 0.0014299728019173089
+    },
+    "knee movement": {
+        "total_weight": 1,
+        "total_len": 696.1830000000001,
+        "weight": 0.0014364039340230943
+    },
+    "greet": {
+        "total_weight": 1,
+        "total_len": 695.441,
+        "weight": 0.001437936503599874
+    },
+    "animal behavior": {
+        "total_weight": 1,
+        "total_len": 649.4270000000001,
+        "weight": 0.0015398189480880834
+    },
+    "run": {
+        "total_weight": 1,
+        "total_len": 609.4730000000001,
+        "weight": 0.0016407617728759105
+    },
+    "stand up": {
+        "total_weight": 1,
+        "total_len": 609.3069999999997,
+        "weight": 0.0016412087830929244
+    },
+    "grasp object": {
+        "total_weight": 1,
+        "total_len": 598.5889999999999,
+        "weight": 0.0016705953500649028
+    },
+    "action with ball": {
+        "total_weight": 1,
+        "total_len": 596.057,
+        "weight": 0.0016776918985935908
+    },
+    "waist movements": {
+        "total_weight": 1,
+        "total_len": 591.7259999999998,
+        "weight": 0.001689971371884961
+    },
+    "lift something": {
+        "total_weight": 1,
+        "total_len": 494.6549999999999,
+        "weight": 0.0020216110218232914
+    },
+    "play sport": {
+        "total_weight": 1,
+        "total_len": 485.688,
+        "weight": 0.0020589349541269295
+    },
+    "touching face": {
+        "total_weight": 1,
+        "total_len": 440.65299999999996,
+        "weight": 0.002269359337165525
+    },
+    "lean": {
+        "total_weight": 1,
+        "total_len": 433.5700000000001,
+        "weight": 0.0023064326406347295
+    },
+    "poses": {
+        "total_weight": 1,
+        "total_len": 409.92900000000003,
+        "weight": 0.0024394468310365938
+    },
+    "a pose": {
+        "total_weight": 1,
+        "total_len": 385.286,
+        "weight": 0.0025954745306084313
+    },
+    "sports move": {
+        "total_weight": 1,
+        "total_len": 376.0970000000001,
+        "weight": 0.0026588885314160968
+    },
+    "squat": {
+        "total_weight": 1,
+        "total_len": 368.53,
+        "weight": 0.0027134832985102977
+    },
+    "grab body part": {
+        "total_weight": 1,
+        "total_len": 361.8399999999999,
+        "weight": 0.00276365244306876
+    },
+    "adjust": {
+        "total_weight": 1,
+        "total_len": 347.90799999999996,
+        "weight": 0.002874323096910678
+    },
+    "punch": {
+        "total_weight": 1,
+        "total_len": 346.3079999999998,
+        "weight": 0.002887602943044921
+    },
+    "martial art": {
+        "total_weight": 1,
+        "total_len": 343.7700000000002,
+        "weight": 0.0029089216627396206
+    },
+    "scratch": {
+        "total_weight": 1,
+        "total_len": 335.905,
+        "weight": 0.0029770321966032065
+    },
+    "upper body movements": {
+        "total_weight": 1,
+        "total_len": 335.358,
+        "weight": 0.002981888012213813
+    },
+    "crawl": {
+        "total_weight": 1,
+        "total_len": 329.103,
+        "weight": 0.0030385623953595076
+    },
+    "balance": {
+        "total_weight": 1,
+        "total_len": 326.174,
+        "weight": 0.0030658482895632396
+    },
+    "shake": {
+        "total_weight": 1,
+        "total_len": 322.9130000000002,
+        "weight": 0.0030968093573191524
+    },
+    "kneel": {
+        "total_weight": 1,
+        "total_len": 317.1480000000001,
+        "weight": 0.0031531020217690155
+    },
+    "clap": {
+        "total_weight": 1,
+        "total_len": 314.9070000000001,
+        "weight": 0.003175540715195279
+    },
+    "face direction": {
+        "total_weight": 1,
+        "total_len": 306.576,
+        "weight": 0.003261833933510777
+    },
+    "play instrument": {
+        "total_weight": 1,
+        "total_len": 296.251,
+        "weight": 0.0033755160320133944
+    },
+    "swim": {
+        "total_weight": 1,
+        "total_len": 293.226,
+        "weight": 0.0034103387830547085
+    },
+    "hop": {
+        "total_weight": 1,
+        "total_len": 289.6439999999999,
+        "weight": 0.003452514120782755
+    },
+    "crossing limbs": {
+        "total_weight": 1,
+        "total_len": 275.26000000000005,
+        "weight": 0.0036329288672527784
+    },
+    "spin": {
+        "total_weight": 1,
+        "total_len": 262.652,
+        "weight": 0.0038073191904116474
+    },
+    "stumble": {
+        "total_weight": 1,
+        "total_len": 244.55400000000012,
+        "weight": 0.00408907644119499
+    },
+    "shoulder movements": {
+        "total_weight": 1,
+        "total_len": 235.45700000000002,
+        "weight": 0.004247059972733874
+    },
+    "catch": {
+        "total_weight": 1,
+        "total_len": 223.349,
+        "weight": 0.0044772978611948115
+    },
+    "rolling movement": {
+        "total_weight": 1,
+        "total_len": 218.451,
+        "weight": 0.004577685613707422
+    },
+    "jump rope": {
+        "total_weight": 1,
+        "total_len": 206.22799999999998,
+        "weight": 0.004849002075372888
+    },
+    "crouch": {
+        "total_weight": 1,
+        "total_len": 204.94399999999996,
+        "weight": 0.004879381684752909
+    },
+    "bow": {
+        "total_weight": 1,
+        "total_len": 201.038,
+        "weight": 0.004974183985117241
+    },
+    "evade": {
+        "total_weight": 1,
+        "total_len": 187.33000000000004,
+        "weight": 0.0053381732771045735
+    },
+    "grab person": {
+        "total_weight": 1,
+        "total_len": 186.97899999999998,
+        "weight": 0.005348194182234369
+    },
+    "misc. activities": {
+        "total_weight": 1,
+        "total_len": 185.46699999999998,
+        "weight": 0.0053917947667239995
+    },
+    "spread": {
+        "total_weight": 1,
+        "total_len": 180.55399999999997,
+        "weight": 0.005538509254848965
+    },
+    "twist": {
+        "total_weight": 1,
+        "total_len": 174.89000000000007,
+        "weight": 0.005717879810166388
+    },
+    "telephone call": {
+        "total_weight": 1,
+        "total_len": 166.25400000000005,
+        "weight": 0.006014892874757899
+    },
+    "wrist movements": {
+        "total_weight": 1,
+        "total_len": 161.52800000000002,
+        "weight": 0.0061908771234708525
+    },
+    "drink": {
+        "total_weight": 1,
+        "total_len": 156.60200000000003,
+        "weight": 0.0063856144876821485
+    },
+    "jumping jacks": {
+        "total_weight": 1,
+        "total_len": 147.88199999999998,
+        "weight": 0.006762148199239935
+    },
+    "hit": {
+        "total_weight": 1,
+        "total_len": 146.70300000000003,
+        "weight": 0.006816493186915058
+    },
+    "limp": {
+        "total_weight": 1,
+        "total_len": 145.88400000000001,
+        "weight": 0.006854761317210934
+    },
+    "misc. abstract action": {
+        "total_weight": 1,
+        "total_len": 139.94500000000002,
+        "weight": 0.007145664368144627
+    },
+    "mix": {
+        "total_weight": 1,
+        "total_len": 134.743,
+        "weight": 0.007421535812621064
+    },
+    "support": {
+        "total_weight": 1,
+        "total_len": 128.52,
+        "weight": 0.007780890133831309
+    },
+    "sneak": {
+        "total_weight": 1,
+        "total_len": 124.86300000000003,
+        "weight": 0.008008777620271816
+    },
+    "communicate (vocalise)": {
+        "total_weight": 1,
+        "total_len": 123.43399999999998,
+        "weight": 0.00810149553607596
+    },
+    "get injured": {
+        "total_weight": 1,
+        "total_len": 118.406,
+        "weight": 0.008445517963616709
+    },
+    "rub": {
+        "total_weight": 1,
+        "total_len": 114.17999999999999,
+        "weight": 0.008758101243650377
+    },
+    "skip": {
+        "total_weight": 1,
+        "total_len": 109.733,
+        "weight": 0.009113028897414633
+    },
+    "knock": {
+        "total_weight": 1,
+        "total_len": 109.45100000000004,
+        "weight": 0.009136508574613294
+    },
+    "move back to original position": {
+        "total_weight": 1,
+        "total_len": 108.84299999999996,
+        "weight": 0.009187545363505236
+    },
+    "touch ground": {
+        "total_weight": 1,
+        "total_len": 108.422,
+        "weight": 0.009223220379627752
+    },
+    "cartwheel": {
+        "total_weight": 1,
+        "total_len": 99.152,
+        "weight": 0.010085525254155236
+    },
+    "shuffle": {
+        "total_weight": 1,
+        "total_len": 98.227,
+        "weight": 0.010180500269783257
+    },
+    "play catch": {
+        "total_weight": 1,
+        "total_len": 96.92500000000003,
+        "weight": 0.010317255610007734
+    },
+    "move misc. body part": {
+        "total_weight": 1,
+        "total_len": 96.919,
+        "weight": 0.010317894324126333
+    },
+    "side to side movement": {
+        "total_weight": 1,
+        "total_len": 94.458,
+        "weight": 0.010586715789027928
+    },
+    "stagger": {
+        "total_weight": 1,
+        "total_len": 93.58000000000001,
+        "weight": 0.010686044026501388
+    },
+    "stances": {
+        "total_weight": 1,
+        "total_len": 91.315,
+        "weight": 0.01095110332365986
+    },
+    "style hair": {
+        "total_weight": 1,
+        "total_len": 89.34400000000001,
+        "weight": 0.011192693409742119
+    },
+    "misc. action": {
+        "total_weight": 1,
+        "total_len": 87.49400000000001,
+        "weight": 0.011429355155782108
+    },
+    "point": {
+        "total_weight": 1,
+        "total_len": 86.79499999999999,
+        "weight": 0.011521401002361889
+    },
+    "sway": {
+        "total_weight": 1,
+        "total_len": 83.556,
+        "weight": 0.011968021446694432
+    },
+    "wait": {
+        "total_weight": 1,
+        "total_len": 75.70900000000002,
+        "weight": 0.013208469270496239
+    },
+    "tap": {
+        "total_weight": 1,
+        "total_len": 74.82300000000002,
+        "weight": 0.01336487443700466
+    },
+    "lie": {
+        "total_weight": 1,
+        "total_len": 70.419,
+        "weight": 0.014200712875786364
+    },
+    "slide": {
+        "total_weight": 1,
+        "total_len": 66.537,
+        "weight": 0.01502923185595984
+    },
+    "lunge": {
+        "total_weight": 1,
+        "total_len": 64.72099999999998,
+        "weight": 0.01545093555414781
+    },
+    "wash": {
+        "total_weight": 1,
+        "total_len": 62.753,
+        "weight": 0.01593549312383472
+    },
+    "eat": {
+        "total_weight": 1,
+        "total_len": 61.418000000000006,
+        "weight": 0.016281871763977985
+    },
+    "yoga": {
+        "total_weight": 1,
+        "total_len": 60.11999999999999,
+        "weight": 0.016633399866932803
+    },
+    "rocking movement": {
+        "total_weight": 1,
+        "total_len": 59.506,
+        "weight": 0.016805028064396866
+    },
+    "dribble": {
+        "total_weight": 1,
+        "total_len": 58.792,
+        "weight": 0.017009116886651243
+    },
+    "shivering": {
+        "total_weight": 1,
+        "total_len": 58.330000000000005,
+        "weight": 0.01714383679067375
+    },
+    "operate interface": {
+        "total_weight": 1,
+        "total_len": 58.11300000000001,
+        "weight": 0.017207853664412437
+    },
+    "march": {
+        "total_weight": 1,
+        "total_len": 56.47299999999999,
+        "weight": 0.01770757707222921
+    },
+    "flap": {
+        "total_weight": 1,
+        "total_len": 56.135,
+        "weight": 0.017814197915738843
+    },
+    "relax": {
+        "total_weight": 1,
+        "total_len": 55.419000000000004,
+        "weight": 0.018044353019722476
+    },
+    "golf": {
+        "total_weight": 1,
+        "total_len": 53.273,
+        "weight": 0.018771234959547987
+    },
+    "play": {
+        "total_weight": 1,
+        "total_len": 53.16,
+        "weight": 0.018811136192626036
+    },
+    "salute": {
+        "total_weight": 1,
+        "total_len": 50.158,
+        "weight": 0.019936999082898043
+    },
+    "zombie": {
+        "total_weight": 1,
+        "total_len": 48.65200000000001,
+        "weight": 0.020554139603716184
+    },
+    "press something": {
+        "total_weight": 1,
+        "total_len": 48.506000000000014,
+        "weight": 0.0206160062672659
+    },
+    "cry": {
+        "total_weight": 1,
+        "total_len": 47.904999999999994,
+        "weight": 0.020874647740319385
+    },
+    "tie": {
+        "total_weight": 1,
+        "total_len": 47.789,
+        "weight": 0.020925317541693696
+    },
+    "drunken behavior": {
+        "total_weight": 1,
+        "total_len": 47.58800000000001,
+        "weight": 0.021013700933008316
+    },
+    "despair": {
+        "total_weight": 1,
+        "total_len": 45.048,
+        "weight": 0.022198543775528323
+    },
+    "protect": {
+        "total_weight": 1,
+        "total_len": 44.70100000000001,
+        "weight": 0.02237086418648352
+    },
+    "open something": {
+        "total_weight": 1,
+        "total_len": 44.37800000000001,
+        "weight": 0.022533687863355713
+    },
+    "shrug": {
+        "total_weight": 1,
+        "total_len": 42.578,
+        "weight": 0.023486307482737563
+    },
+    "to lower a body part": {
+        "total_weight": 1,
+        "total_len": 42.33399999999999,
+        "weight": 0.02362167524920868
+    },
+    "search": {
+        "total_weight": 1,
+        "total_len": 41.757,
+        "weight": 0.02394808056134301
+    },
+    "fight": {
+        "total_weight": 1,
+        "total_len": 41.262,
+        "weight": 0.024235373951820075
+    },
+    "duck": {
+        "total_weight": 1,
+        "total_len": 39.211000000000006,
+        "weight": 0.02550304761418989
+    },
+    "tiptoe": {
+        "total_weight": 1,
+        "total_len": 39.0,
+        "weight": 0.02564102564102564
+    },
+    "interact with rope": {
+        "total_weight": 1,
+        "total_len": 38.627,
+        "weight": 0.0258886271261035
+    },
+    "drive": {
+        "total_weight": 1,
+        "total_len": 37.706,
+        "weight": 0.02652097809367209
+    },
+    "check": {
+        "total_weight": 1,
+        "total_len": 37.22900000000001,
+        "weight": 0.02686078057428348
+    },
+    "listen": {
+        "total_weight": 1,
+        "total_len": 36.881,
+        "weight": 0.027114232260513543
+    },
+    "write": {
+        "total_weight": 1,
+        "total_len": 36.208000000000006,
+        "weight": 0.027618205921343345
+    },
+    "give something": {
+        "total_weight": 1,
+        "total_len": 35.043000000000006,
+        "weight": 0.028536369603059095
+    },
+    "pray": {
+        "total_weight": 1,
+        "total_len": 34.431000000000004,
+        "weight": 0.029043594435247302
+    },
+    "draw": {
+        "total_weight": 1,
+        "total_len": 33.869,
+        "weight": 0.02952552481620361
+    },
+    "hurry": {
+        "total_weight": 1,
+        "total_len": 33.266999999999996,
+        "weight": 0.030059819039889385
+    },
+    "lie in prone position": {
+        "total_weight": 1,
+        "total_len": 32.666,
+        "weight": 0.030612869650401033
+    },
+    "wobble": {
+        "total_weight": 1,
+        "total_len": 32.562,
+        "weight": 0.030710644309317612
+    },
+    "think": {
+        "total_weight": 1,
+        "total_len": 31.429000000000002,
+        "weight": 0.03181774793980082
+    },
+    "waddle": {
+        "total_weight": 1,
+        "total_len": 30.77,
+        "weight": 0.032499187520311994
+    },
+    "wiggle": {
+        "total_weight": 1,
+        "total_len": 30.297000000000004,
+        "weight": 0.03300656830709311
+    },
+    "sudden movement": {
+        "total_weight": 1,
+        "total_len": 29.66300000000001,
+        "weight": 0.03371203182415803
+    },
+    "sign": {
+        "total_weight": 1,
+        "total_len": 29.426000000000002,
+        "weight": 0.03398355196085095
+    },
+    "trip": {
+        "total_weight": 1,
+        "total_len": 28.288000000000007,
+        "weight": 0.03535067873303167
+    },
+    "flip": {
+        "total_weight": 1,
+        "total_len": 27.823999999999998,
+        "weight": 0.035940195514663605
+    },
+    "stop": {
+        "total_weight": 1,
+        "total_len": 27.127000000000006,
+        "weight": 0.03686364139049655
+    },
+    "shave": {
+        "total_weight": 1,
+        "total_len": 24.813000000000002,
+        "weight": 0.04030145488252126
+    },
+    "worry": {
+        "total_weight": 1,
+        "total_len": 24.338,
+        "weight": 0.04108801051853069
+    },
+    "bartender behavior series": {
+        "total_weight": 1,
+        "total_len": 23.708,
+        "weight": 0.04217985490129914
+    },
+    "stroke": {
+        "total_weight": 1,
+        "total_len": 23.476,
+        "weight": 0.042596694496507076
+    },
+    "swipe": {
+        "total_weight": 1,
+        "total_len": 23.285999999999998,
+        "weight": 0.042944258352658256
+    },
+    "leap": {
+        "total_weight": 1,
+        "total_len": 22.762999999999995,
+        "weight": 0.04393094056143743
+    },
+    "fish": {
+        "total_weight": 1,
+        "total_len": 22.312,
+        "weight": 0.04481893151667264
+    },
+    "slash gesture series": {
+        "total_weight": 1,
+        "total_len": 20.563000000000002,
+        "weight": 0.04863103632738413
+    },
+    "hug": {
+        "total_weight": 1,
+        "total_len": 20.522000000000002,
+        "weight": 0.04872819413312542
+    },
+    "mime": {
+        "total_weight": 1,
+        "total_len": 19.282999999999998,
+        "weight": 0.05185915054711404
+    },
+    "stomp": {
+        "total_weight": 1,
+        "total_len": 18.915,
+        "weight": 0.05286809410520751
+    },
+    "handstand": {
+        "total_weight": 1,
+        "total_len": 18.603,
+        "weight": 0.053754770735902804
+    },
+    "yawn": {
+        "total_weight": 1,
+        "total_len": 18.116999999999997,
+        "weight": 0.05519677650825193
+    },
+    "chop": {
+        "total_weight": 1,
+        "total_len": 17.529,
+        "weight": 0.057048319926978154
+    },
+    "bump": {
+        "total_weight": 1,
+        "total_len": 16.485,
+        "weight": 0.060661207158022444
+    },
+    "disagree": {
+        "total_weight": 1,
+        "total_len": 15.93,
+        "weight": 0.06277463904582549
+    },
+    "fire gun": {
+        "total_weight": 1,
+        "total_len": 15.196,
+        "weight": 0.06580679126085812
+    },
+    "lead": {
+        "total_weight": 1,
+        "total_len": 14.416,
+        "weight": 0.06936736958934517
+    },
+    "ride": {
+        "total_weight": 1,
+        "total_len": 14.3,
+        "weight": 0.06993006993006992
+    },
+    "cough": {
+        "total_weight": 1,
+        "total_len": 14.127000000000002,
+        "weight": 0.07078643731860974
+    },
+    "conduct": {
+        "total_weight": 1,
+        "total_len": 14.02,
+        "weight": 0.07132667617689016
+    },
+    "chicken dance": {
+        "total_weight": 1,
+        "total_len": 13.996999999999998,
+        "weight": 0.07144388083160678
+    },
+    "rolls on ground": {
+        "total_weight": 1,
+        "total_len": 13.6,
+        "weight": 0.07352941176470588
+    },
+    "tentative movements": {
+        "total_weight": 1,
+        "total_len": 13.114,
+        "weight": 0.07625438462711605
+    },
+    "fall": {
+        "total_weight": 1,
+        "total_len": 13.025999999999998,
+        "weight": 0.07676953784738218
+    },
+    "strafe": {
+        "total_weight": 1,
+        "total_len": 12.462999999999997,
+        "weight": 0.08023750300890638
+    },
+    "aim": {
+        "total_weight": 1,
+        "total_len": 11.354,
+        "weight": 0.08807468733485997
+    },
+    "unknown": {
+        "total_weight": 1,
+        "total_len": 11.271999999999998,
+        "weight": 0.0887154009936125
+    },
+    "hang": {
+        "total_weight": 1,
+        "total_len": 11.164999999999997,
+        "weight": 0.08956560680698614
+    },
+    "inward motion": {
+        "total_weight": 1,
+        "total_len": 10.861999999999998,
+        "weight": 0.09206407659731174
+    },
+    "count": {
+        "total_weight": 1,
+        "total_len": 10.23,
+        "weight": 0.09775171065493646
+    },
+    "headstand": {
+        "total_weight": 1,
+        "total_len": 9.965,
+        "weight": 0.10035122930255896
+    },
+    "flail arms": {
+        "total_weight": 1,
+        "total_len": 8.375000000000002,
+        "weight": 0.11940298507462684
+    },
+    "laugh": {
+        "total_weight": 1,
+        "total_len": 7.688,
+        "weight": 0.1300728407908429
+    },
+    "dip": {
+        "total_weight": 1,
+        "total_len": 7.647000000000013,
+        "weight": 0.1307702366941282
+    },
+    "cut": {
+        "total_weight": 1,
+        "total_len": 7.164999999999999,
+        "weight": 0.13956734124214937
+    },
+    "juggle": {
+        "total_weight": 1,
+        "total_len": 7.118,
+        "weight": 0.14048890137679124
+    },
+    "close something": {
+        "total_weight": 1,
+        "total_len": 6.939999999999998,
+        "weight": 0.14409221902017297
+    },
+    "steady": {
+        "total_weight": 1,
+        "total_len": 6.81,
+        "weight": 0.14684287812041116
+    },
+    "pat": {
+        "total_weight": 1,
+        "total_len": 6.129999999999999,
+        "weight": 0.16313213703099513
+    },
+    "skate": {
+        "total_weight": 1,
+        "total_len": 5.9,
+        "weight": 0.1694915254237288
+    },
+    "navigate": {
+        "total_weight": 1,
+        "total_len": 5.875,
+        "weight": 0.1702127659574468
+    },
+    "fidget": {
+        "total_weight": 1,
+        "total_len": 5.481000000000002,
+        "weight": 0.18244845831052722
+    },
+    "remove": {
+        "total_weight": 1,
+        "total_len": 5.405000000000001,
+        "weight": 0.18501387604070302
+    },
+    "pose": {
+        "total_weight": 1,
+        "total_len": 5.2,
+        "weight": 0.1923076923076923
+    },
+    "clasp hands": {
+        "total_weight": 1,
+        "total_len": 5.099000000000006,
+        "weight": 0.1961168856638554
+    },
+    "release": {
+        "total_weight": 1,
+        "total_len": 5.088999999999999,
+        "weight": 0.19650225977598748
+    },
+    "plead": {
+        "total_weight": 1,
+        "total_len": 4.907000000000004,
+        "weight": 0.20379050336254315
+    },
+    "moonwalk": {
+        "total_weight": 1,
+        "total_len": 4.881,
+        "weight": 0.2048760499897562
+    },
+    "list body parts": {
+        "total_weight": 1,
+        "total_len": 4.5,
+        "weight": 0.2222222222222222
+    },
+    "gain": {
+        "total_weight": 1,
+        "total_len": 4.489000000000001,
+        "weight": 0.22276676319893068
+    },
+    "get down on the floor": {
+        "total_weight": 1,
+        "total_len": 4.374999999999998,
+        "weight": 0.22857142857142868
+    },
+    "glide": {
+        "total_weight": 1,
+        "total_len": 4.35,
+        "weight": 0.2298850574712644
+    },
+    "taunt": {
+        "total_weight": 1,
+        "total_len": 4.2,
+        "weight": 0.23809523809523808
+    },
+    "charge": {
+        "total_weight": 1,
+        "total_len": 3.944,
+        "weight": 0.2535496957403651
+    },
+    "sneeze": {
+        "total_weight": 1,
+        "total_len": 3.8750000000000027,
+        "weight": 0.2580645161290321
+    },
+    "zip/unzip": {
+        "total_weight": 1,
+        "total_len": 3.47,
+        "weight": 0.2881844380403458
+    },
+    "roll over": {
+        "total_weight": 1,
+        "total_len": 3.412,
+        "weight": 0.29308323563892147
+    },
+    "lick": {
+        "total_weight": 1,
+        "total_len": 3.3339999999999996,
+        "weight": 0.2999400119976005
+    },
+    "curtsy": {
+        "total_weight": 1,
+        "total_len": 2.74,
+        "weight": 0.36496350364963503
+    },
+    "noisy labels": {
+        "total_weight": 1,
+        "total_len": 2.7189999999999994,
+        "weight": 0.3677822728944466
+    },
+    "smell": {
+        "total_weight": 1,
+        "total_len": 2.414999999999999,
+        "weight": 0.4140786749482403
+    },
+    "reveal": {
+        "total_weight": 1,
+        "total_len": 2.3600000000000003,
+        "weight": 0.42372881355932196
+    },
+    "shout": {
+        "total_weight": 1,
+        "total_len": 1.979,
+        "weight": 0.5053057099545225
+    },
+    "stick": {
+        "total_weight": 1,
+        "total_len": 1.9440000000000004,
+        "weight": 0.5144032921810698
+    },
+    "uncross": {
+        "total_weight": 1,
+        "total_len": 1.7539999999999996,
+        "weight": 0.5701254275940708
+    },
+    "excite": {
+        "total_weight": 1,
+        "total_len": 1.6869999999999994,
+        "weight": 0.5927682276229996
+    },
+    "admire": {
+        "total_weight": 1,
+        "total_len": 1.6079999999999997,
+        "weight": 0.6218905472636818
+    },
+    "try": {
+        "total_weight": 1,
+        "total_len": 1.4370000000000003,
+        "weight": 0.69589422407794
+    },
+    "endure": {
+        "total_weight": 1,
+        "total_len": 1.2020000000000017,
+        "weight": 0.8319467554076527
+    },
+    "celebrate": {
+        "total_weight": 1,
+        "total_len": 1.1879999999999988,
+        "weight": 0.8417508417508426
+    },
+    "backwards": {
+        "total_weight": 1,
+        "total_len": 0.9239999999999999,
+        "weight": 1.0822510822510822
+    },
+    "land": {
+        "total_weight": 1,
+        "total_len": 0.5189999999999997,
+        "weight": 1.926782273603084
+    },
+    "plant feet": {
+        "total_weight": 1,
+        "total_len": 0.21799999999999997,
+        "weight": 4.587155963302753
+    }
+}

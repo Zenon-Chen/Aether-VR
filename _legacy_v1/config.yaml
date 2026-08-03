@@ -1,0 +1,48 @@
+# Aether VR Agent 默认配置文件
+# API Key 通过 GEMINI_API_KEY 环境变量设置，不要写入此文件
+
+er2:
+  model: "gemini-robotics-er-2-streaming-preview"
+  # api_key: 通过 GEMINI_API_KEY 环境变量设置
+  response_modalities: ["TEXT"]
+  context_window_tokens: 128000
+  compression_trigger_tokens: 120000
+  compression_target_tokens: 80000
+
+tts:
+  model: "gemini-3.1-flash-tts-preview"
+  voice_name: "Kore"
+  max_segment_chars: 30
+
+dart:
+  host: "localhost"
+  port: 8900
+  timeout: 30
+
+osc:
+  host: "127.0.0.1"
+  port: 9000
+  avatar_prefix: "/avatar/parameters"
+  target_fps: 30  # 播放帧率插值目标；DART 帧率低于此值时插值平滑
+
+audio:
+  input_sample_rate: 16000
+  output_sample_rate: 24000
+  channels: 1
+  sample_width: 2
+  vad_threshold: 0.5
+
+context:
+  embedding_model: "gemini-embedding-001"
+  embedding_dim: 768
+  scorer_model: "gemini-2.0-flash"
+  max_active_tokens: 100000
+  heartbeat_interval: 30
+  scoring_interval: 30
+  scoring_batch_size: 10
+
+log:
+  level: "INFO"
+  file: "logs/aether.log"
+  max_bytes: 10000000
+  backup_count: 7

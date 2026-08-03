@@ -1,64 +1,16 @@
-# Python
-__pycache__/
+﻿__pycache__/
 *.py[cod]
-*.egg-info/
-dist/
-build/
-*.egg
-
-# Virtual environments
-venv/
 .venv/
-env/
-
-# IDE
-.vscode/
-.idea/
-*.swp
-
-# Logs (不提交日志内容)
+.pytest_cache/
 logs/*.log
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Local config overrides
-.env
-config.local.yaml
-
-# Legacy files
-_legacy/
-
-# Temporary files
-*.tmp
-*.bak
-
-# Temporary debug scripts
-_tmp_*.py
-
-# IDE runtime artifacts
-.qoder/
-
-# Test/delivery artifacts (binary outputs)
 logs/*.pkl
 logs/*.wav
-
-# DART model files & large data (download separately)
-dart/mld_denoiser/*/checkpoint_*.pt
-dart/mvae/*/checkpoint_*.pt
-dart/data/smplx_lockedhead_20230207/models_lockedhead/smplx/*.npz
-dart/data/smplx_lockedhead_20230207/*.zip
-dart/data/SMPLX_FEMALE.pkl
-dart/data/**/*.pkl
-dart/data/**/*.npz
-dart/__pycache__/
-dart/**/__pycache__/
-dart/DART/data/
-dart/data/scenes/
-dart/data/traj_test/
-dart/data/test_locomotion/
-dart/data/optim_interaction/
-dart/data/inbetween/
-dart/data/test_smplx.zip
-dart/data/smplx_lockedhead_20230207.zip
+data/*.sqlite3
+dart/data/
+dart/mld_denoiser/
+dart/mvae/
+dart/policy_train/
+*.pt
+*.pkl
+*.zip
+.env
