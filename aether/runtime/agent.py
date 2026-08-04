@@ -55,6 +55,7 @@ class AetherRuntime:
         self.posture = PostureService(config.posture, config.dart)
         self.brain = BrainService(config.brain)
         self.scribe = ScribeService(config.scribe)
+        self.scribe.set_evaluator(self.brain.evaluate_memory)
         self.cerebellum = CerebellumService(
             config.cerebellum,
             actions=self.avatar.known_actions(),

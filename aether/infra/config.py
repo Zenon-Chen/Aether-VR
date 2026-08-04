@@ -50,9 +50,12 @@ class BrainConfig(BaseModel):
 
 
 class ScribeConfig(BaseModel):
-    enabled: bool = False          # 阶段 2 接入
-    batch_size: int = 10           # 积攒 N 个推理块再批量标记
+    """长期记忆与上下文压缩"""
+    enabled: bool = False
+    batch_size: int = 10
     db_path: str = "data/memory.sqlite3"
+    context_limit_tokens: int = 120_000
+    evict_target_tokens: int = 80_000
 
 
 class SpeechConfig(BaseModel):

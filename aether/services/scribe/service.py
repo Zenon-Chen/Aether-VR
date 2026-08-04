@@ -21,6 +21,7 @@ import asyncio
 import logging
 import sqlite3
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -64,6 +65,17 @@ class ScribeService:
         self._blocks: list[Block] = []
         self._db: Optional[sqlite3.Connection] = None
         self._lock = asyncio.Lock()
+        self._evaluator: Optional[
+            Callable[[list[dict[str, str]]], Awaitable[list[dict[str, str]]]]
+        ] = None
+
+    def set_evaluator(
+        self,
+        evaluator: Callable[
+            [list[dict[str, str]]], Awaitable[list[dict[str, str]]]
+        ],
+    ) -> None:
+        self._evaluator = evaluator
 
     # ── 生命周期 ───────────────────────────────────────────
 
@@ -109,27 +121,64 @@ class ScribeService:
                 await self._mark_batch()
 
     async def _mark_batch(self) -> None:
-        """批量标记重要性 —— 重要性是相对的，必须成批判断
-
-        当前为启发式占位；接入大脑后改为一次模型调用批量裁决。
-        """
+        """批量标记重要性，模型不可用时回退本地启发式。"""
         batch, self._pending = self._pending, []
-        for block in batch:
-            block.importance = _heuristic_importance(block)
+        decisions: list[dict[str, str]] = []
+        if self._evaluator is not None:
+            decisions = await self._evaluator([
+                {"kind": block.kind, "content": block.content}
+                for block in batch
+            ])
+
+        for index, block in enumerate(batch):
+            decision = decisions[index] if index < len(decisions) else {}
+            try:
+                block.importance = Importance(decision.get("importance", ""))
+            except ValueError:
+                block.importance = _heuristic_importance(block)
             if block.importance is Importance.NORMAL:
-                block.summary = _one_line(block.content)
+                block.summary = (
+                    str(decision.get("summary", "")).strip()
+                    or _one_line(block.content)
+                )
         self._blocks.extend(b for b in batch if b.importance is not Importance.WORTHLESS)
+        await self._enforce_limit()
         logger.debug("[Scribe] 批量标记 %d 块，保留 %d", len(batch), len(self._blocks))
+
+    async def _enforce_limit(self) -> None:
+        """超过上限时先驱逐一般块，再驱逐最旧的重要块，全部落盘。"""
+        limit = self._config.context_limit_tokens
+        target = self._config.evict_target_tokens
+        if self.context_tokens <= limit:
+            return
+
+        for importance in (Importance.NORMAL, Importance.IMPORTANT):
+            for block in list(self._blocks):
+                if self.context_tokens <= target:
+                    return
+                if block.importance is not importance:
+                    continue
+                await self.remember(
+                    block.content,
+                    f"evicted_{block.kind}",
+                    summary=block.summary,
+                )
+                self._blocks.remove(block)
 
     # ── 长期记忆 ───────────────────────────────────────────
 
-    async def remember(self, content: str, kind: str = "fact") -> None:
+    async def remember(
+        self,
+        content: str,
+        kind: str = "fact",
+        summary: str = "",
+    ) -> None:
         """写入长期记忆库 —— 驱逐时必须调用，保证信息不消失"""
         if self._db is None:
             return
         self._db.execute(
-            "INSERT INTO memory (created_at, kind, content) VALUES (?, ?, ?)",
-            (time.time(), kind, content),
+            "INSERT INTO memory (created_at, kind, content, summary) VALUES (?, ?, ?, ?)",
+            (time.time(), kind, content, summary),
         )
         self._db.commit()
 

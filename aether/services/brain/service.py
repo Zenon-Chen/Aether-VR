@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Optional
 
@@ -98,6 +99,36 @@ class BrainService:
         return self._last
 
     # ── 观察 ───────────────────────────────────────────────
+
+    async def evaluate_memory(self, blocks: list[dict[str, str]]) -> list[dict[str, str]]:
+        """批量裁决记忆重要性；失败时让调用方回退本地启发式。"""
+        if not self.enabled or not blocks:
+            return []
+
+        prompt = (
+            "你是记忆书记官。按未来人格连续性与行动价值，逐条标记 "
+            "important、normal 或 worthless。normal 必须给不超过40字的一行摘要。"
+            "只输出 JSON 数组，顺序与输入严格一致，格式："
+            '[{"importance":"normal","summary":"..."}]\n输入：\n'
+            + json.dumps(blocks, ensure_ascii=False)
+        )
+        try:
+            response = await asyncio.to_thread(
+                self._client.models.generate_content,
+                model=self._config.model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=max(256, len(blocks) * 64),
+                    response_mime_type="application/json",
+                ),
+            )
+            parsed = json.loads(response.text or "[]")
+            if not isinstance(parsed, list) or len(parsed) != len(blocks):
+                raise ValueError("返回条目数量与输入不一致")
+            return [item for item in parsed if isinstance(item, dict)]
+        except Exception as exc:
+            logger.warning("[Brain] 记忆裁决失败，回退启发式：%s", exc)
+            return []
 
     async def observe(
         self,
