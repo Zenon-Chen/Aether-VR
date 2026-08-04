@@ -1,4 +1,4 @@
-# Aether 配置
+﻿# Aether 配置
 # API Key 通过 GEMINI_API_KEY 环境变量设置，不要写入此文件
 
 # ── 感知采集 ──────────────────────────────────
@@ -41,7 +41,7 @@ speech:
   voice_name: "Kore"
   max_segment_chars: 30
   output_sample_rate: 24000
-  output_device: null             # 虚拟声卡名称，如 "CABLE Input"
+  output_device: "MIXLINE"        # 扬声器 (MIXLINE) → MIXLINE Stream 虚拟麦 → VRChat
   fallback_sound: "assets/filler.wav"
 
 # ── DART 动作生成（WSL2）──────────────────────
