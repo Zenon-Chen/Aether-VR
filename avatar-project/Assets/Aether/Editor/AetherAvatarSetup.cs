@@ -13,7 +13,9 @@ using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEditor.Animations;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using VRC.Core;
 using VRC.SDK3.Avatars.Components;
 using VRC.SDK3.Avatars.ScriptableObjects;
 
@@ -23,6 +25,7 @@ namespace Aether
     {
         const string FbxPath = "Assets/Aether/100Avatars_001_Crimsom.fbx";
         const string OutDir = "Assets/Aether/Generated";
+        const string ScenePath = "Assets/Aether/AetherAvatar.unity";
 
         // 与 Aether config.yaml avatar.actions 严格一致
         static readonly (string name, int id)[] Actions = {
@@ -59,6 +62,8 @@ namespace Aether
             }
             var descriptor = instance.GetComponent<VRCAvatarDescriptor>()
                           ?? instance.AddComponent<VRCAvatarDescriptor>();
+            if (instance.GetComponent<PipelineManager>() == null)
+                instance.AddComponent<PipelineManager>();
 
             // ViewPosition 取头骨位置
             var animator = instance.GetComponent<Animator>();
@@ -131,8 +136,25 @@ namespace Aether
             }
 
             EditorUtility.SetDirty(descriptor);
+            EditorSceneManager.SaveScene(instance.scene, ScenePath);
             AssetDatabase.SaveAssets();
-            Debug.Log("[Aether] Avatar 配置完成：Humanoid + Viseme + 参数 + FX 层");
+            Debug.Log("[Aether] Avatar 配置完成：Humanoid + Viseme + 参数 + FX 层 + 场景");
+        }
+
+        [MenuItem("Aether/Build And Test")]
+        public static void BuildAndTest()
+        {
+            if (!File.Exists(ScenePath))
+                Run();
+
+            EditorSceneManager.OpenScene(ScenePath);
+            var descriptor = Object.FindObjectOfType<VRCAvatarDescriptor>();
+            if (descriptor == null)
+                throw new MissingComponentException($"{ScenePath} 中没有 VRCAvatarDescriptor");
+
+            VRC.SDKBase.Editor.VRC_SdkBuilder
+                .RunExportAndTestAvatarBlueprint(descriptor.gameObject);
+            Debug.Log("[Aether] Avatar Build & Test 已启动");
         }
 
         static void ConfigureVisemes(VRCAvatarDescriptor descriptor, GameObject root)
