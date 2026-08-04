@@ -221,10 +221,11 @@ class PostureService:
         await self._await_playback()
 
     async def resume(self) -> None:
-        """预录动画结束后恢复姿态流控制权"""
+        """预录动画结束后平滑恢复 DART/FBT 的站立保活流。"""
+        await self.blend_to(standing_frame(), self._config.blend_s)
         async with self._lock:
-            self._mode = PostureMode.FROZEN
-        logger.info("[Posture] 恢复姿态流控制")
+            self._mode = PostureMode.IDLE
+        logger.info("[Posture] 已平滑恢复姿态流控制")
 
     async def go_idle(self) -> None:
         """回到站立姿势"""
