@@ -14,3 +14,16 @@ dart/policy_train/
 *.pkl
 *.zip
 .env
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+UserSettings/
+.sdk-cache/
+avatar-project/Library/
+avatar-project/Temp/
+avatar-project/Logs/
+avatar-project/UserSettings/
+unity-setup.log

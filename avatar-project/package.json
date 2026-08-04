@@ -1,0 +1,8 @@
+{
+  "name": "com.vrchat.template.avatar",
+  "displayName": "VRChat Avatar Project",
+  "description": "A good starting point for a new VRChat Avatar",
+  "version": "1.5.0",
+  "category": "ProjectTemplate",
+  "dependencies": {}
+}

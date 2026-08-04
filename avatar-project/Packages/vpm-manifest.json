@@ -1,0 +1,24 @@
+﻿{
+    "locked":  {
+                   "com.vrchat.avatars":  {
+                                              "version":  "3.10.4",
+                                              "dependencies":  {
+                                                                   "com.vrchat.base":  "3.10.4"
+                                                               }
+                                          },
+                   "com.vrchat.base":  {
+                                           "version":  "3.10.4",
+                                           "dependencies":  {
+
+                                                            }
+                                       }
+               },
+    "dependencies":  {
+                         "com.vrchat.avatars":  {
+                                                    "version":  "3.10.4"
+                                                },
+                         "com.vrchat.base":  {
+                                                 "version":  "3.10.4"
+                                             }
+                     }
+}
