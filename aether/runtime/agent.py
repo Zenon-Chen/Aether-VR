@@ -140,9 +140,11 @@ class AetherRuntime:
     async def _exec_speak(self, step: PlanStep) -> str:
         text = step.args.get("text", "")
         if step.args.get("use_suggested"):
-            suggestion = self.brain.last_output
-            if suggestion and suggestion.suggested_reply:
-                text = suggestion.suggested_reply
+            text = step.args.get("suggested_reply", "")
+            if not text:
+                suggestion = self.brain.last_output
+                if suggestion and suggestion.suggested_reply:
+                    text = suggestion.suggested_reply
         if not text:
             raise ValueError("没有可说的内容")
         await self.speech.speak(text)
@@ -250,6 +252,8 @@ class AetherRuntime:
             await self._respond(fc, {"status": "ok"})
             return
 
+        plan = self._snapshot_suggested_replies(plan)
+
         if self.state.facts.emergency_stopped:
             await self.emergency.clear()
 
@@ -264,6 +268,21 @@ class AetherRuntime:
                 "plan_id": result.plan_id,
                 "detail": result.summary(),
             })
+
+    def _snapshot_suggested_replies(self, plan):
+        """计划接收时锁定建议台词，保证执行与机械重试使用相同输入。"""
+        suggestion = self.brain.last_output
+        reply = suggestion.suggested_reply if suggestion else ""
+        if not reply:
+            return plan
+        steps = []
+        for step in plan.steps:
+            if step.action is ActionKind.SPEAK and step.args.get("use_suggested"):
+                args = dict(step.args)
+                args["suggested_reply"] = reply
+                step = PlanStep(step.seq, step.action, args, step.parallel)
+            steps.append(step)
+        return type(plan)(steps=tuple(steps), plan_id=plan.plan_id, source=plan.source)
 
     async def _respond(self, fc, payload: dict) -> None:
         """闭合工具调用 —— 不回传会导致 ER2 会话卡死"""

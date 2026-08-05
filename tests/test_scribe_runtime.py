@@ -4,6 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from aether.contracts.observation import BrainOutput
+from aether.contracts.plan import ActionKind, Plan, PlanStep
 from aether.core import StateStore
 from aether.infra.config import ScribeConfig
 from aether.runtime.agent import AetherRuntime
@@ -167,6 +169,46 @@ async def test_cerebellum_emits_finished_input_transcript():
     assert lines == ["你好 Aether"]
 
 
+def test_runtime_snapshots_suggested_reply_into_plan():
+    runtime = AetherRuntime.__new__(AetherRuntime)
+    runtime.brain = SimpleNamespace(last_output=BrainOutput(
+        suggested_reply="锁定的台词",
+    ))
+    plan = Plan(steps=(
+        PlanStep(1, ActionKind.SPEAK, {"use_suggested": True}),
+        PlanStep(2, ActionKind.WAIT, {"duration_s": 0.1}),
+    ))
+
+    frozen = runtime._snapshot_suggested_replies(plan)
+    runtime.brain.last_output = BrainOutput(suggested_reply="后来变化的台词")
+
+    assert frozen.steps[0].args["suggested_reply"] == "锁定的台词"
+    assert frozen.steps[1] is plan.steps[1]
+    assert frozen.plan_id == plan.plan_id
+
+
+@pytest.mark.asyncio
+async def test_exec_speak_uses_snapshot_when_brain_changes():
+    runtime = AetherRuntime.__new__(AetherRuntime)
+    spoken = []
+
+    async def speak(text):
+        spoken.append(text)
+
+    runtime.speech = SimpleNamespace(speak=speak)
+    runtime.state = SimpleNamespace(set_last_speech=_async_sink())
+    runtime.scribe = SimpleNamespace(note=_async_sink())
+    runtime.brain = SimpleNamespace(last_output=BrainOutput())
+    step = PlanStep(1, ActionKind.SPEAK, {
+        "use_suggested": True,
+        "suggested_reply": "锁定的台词",
+    })
+
+    assert await runtime._exec_speak(step) == "锁定的台词"
+    assert await runtime._exec_speak(step) == "锁定的台词"
+    assert spoken == ["锁定的台词", "锁定的台词"]
+
+
 @pytest.mark.asyncio
 async def test_runtime_feeds_recent_memory_to_brain_observe():
     runtime = AetherRuntime.__new__(AetherRuntime)
@@ -211,3 +253,9 @@ def _async_value(value):
     async def get():
         return value
     return get
+
+
+def _async_sink():
+    async def sink(*_args, **_kwargs):
+        return None
+    return sink
