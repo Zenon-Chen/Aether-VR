@@ -176,9 +176,17 @@ class ScribeService:
         """写入长期记忆库 —— 驱逐时必须调用，保证信息不消失"""
         if self._db is None:
             return
+        now = time.time()
+        duplicate = self._db.execute(
+            "SELECT 1 FROM memory "
+            "WHERE kind = ? AND content = ? AND created_at >= ? LIMIT 1",
+            (kind, content, now - self._config.dedupe_window_s),
+        ).fetchone()
+        if duplicate is not None:
+            return
         self._db.execute(
             "INSERT INTO memory (created_at, kind, content, summary) VALUES (?, ?, ?, ?)",
-            (time.time(), kind, content, summary),
+            (now, kind, content, summary),
         )
         self._db.commit()
 

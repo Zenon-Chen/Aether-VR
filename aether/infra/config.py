@@ -54,6 +54,7 @@ class ScribeConfig(BaseModel):
     enabled: bool = False
     batch_size: int = 10
     db_path: str = "data/memory.sqlite3"
+    dedupe_window_s: float = 3600.0
     context_limit_tokens: int = 120_000
     evict_target_tokens: int = 80_000
 

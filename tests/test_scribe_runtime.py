@@ -9,6 +9,7 @@ from aether.infra.config import ScribeConfig
 from aether.runtime.agent import AetherRuntime
 from aether.services.cerebellum.service import CerebellumService
 from aether.services.scribe import ScribeService
+from aether.services.scribe import service as scribe_service
 
 
 @pytest.mark.asyncio
@@ -60,6 +61,60 @@ async def test_scribe_eviction_is_persisted_and_recently_recalled(tmp_path):
     assert "长期事实" in await scribe.recall_recent()
     row = scribe._db.execute("SELECT kind FROM memory").fetchone()
     assert row == ("evicted_text",)
+    await scribe.stop()
+
+
+@pytest.mark.asyncio
+async def test_scribe_remember_deduplicates_same_kind_within_window(tmp_path):
+    scribe = ScribeService(ScribeConfig(
+        enabled=True, db_path=str(tmp_path / "memory.sqlite3")
+    ))
+    await scribe.start()
+
+    await scribe.remember("相同观察", "brain")
+    await scribe.remember("相同观察", "brain")
+
+    rows = scribe._db.execute(
+        "SELECT kind, content FROM memory ORDER BY id"
+    ).fetchall()
+    assert rows == [("brain", "相同观察")]
+    await scribe.stop()
+
+
+@pytest.mark.asyncio
+async def test_scribe_remember_allows_same_content_for_different_kinds(tmp_path):
+    scribe = ScribeService(ScribeConfig(
+        enabled=True, db_path=str(tmp_path / "memory.sqlite3")
+    ))
+    await scribe.start()
+
+    await scribe.remember("相同内容", "brain")
+    await scribe.remember("相同内容", "evicted_text")
+
+    rows = scribe._db.execute(
+        "SELECT kind FROM memory ORDER BY id"
+    ).fetchall()
+    assert rows == [("brain",), ("evicted_text",)]
+    await scribe.stop()
+
+
+@pytest.mark.asyncio
+async def test_scribe_remember_allows_duplicate_after_window(tmp_path, monkeypatch):
+    now = 10_000.0
+    monkeypatch.setattr(scribe_service.time, "time", lambda: now)
+    scribe = ScribeService(ScribeConfig(
+        enabled=True,
+        db_path=str(tmp_path / "memory.sqlite3"),
+        dedupe_window_s=3600,
+    ))
+    await scribe.start()
+
+    await scribe.remember("周期观察", "brain")
+    now += 3601
+    await scribe.remember("周期观察", "brain")
+
+    count = scribe._db.execute("SELECT COUNT(*) FROM memory").fetchone()[0]
+    assert count == 2
     await scribe.stop()
 
 
