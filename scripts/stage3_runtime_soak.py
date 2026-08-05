@@ -44,6 +44,9 @@ async def main() -> None:
     last_at = started
     failures = 0
     cycle = 0
+    consecutive_healthy_s = 0.0
+    reconnect_events = 0
+    previous_er2 = "ok"
 
     await runtime.start()
     try:
@@ -53,15 +56,23 @@ async def main() -> None:
             await runtime._refresh_health()
             now = time.monotonic()
             frames = runtime.posture.frames_sent
-            hz = (frames - last_frames) / max(now - last_at, 1e-6)
+            sample_span = max(now - last_at, 1e-6)
+            hz = (frames - last_frames) / sample_span
             last_frames, last_at = frames, now
             health = runtime.state.facts.services
             health_dict = {
                 name: getattr(health, name)
                 for name in ("dart", "tts", "er2", "brain", "posture", "vrchat_osc")
             }
-            if any(value != "ok" for value in health_dict.values()):
+            all_healthy = all(value == "ok" for value in health_dict.values())
+            if all_healthy:
+                consecutive_healthy_s += sample_span
+            else:
                 failures += 1
+                consecutive_healthy_s = 0.0
+            if previous_er2 == "ok" and health_dict["er2"] != "ok":
+                reconnect_events += 1
+            previous_er2 = health_dict["er2"]
             frame = runtime.capture.latest_frame()
             current, peak = tracemalloc.get_traced_memory()
             row = {
@@ -70,6 +81,8 @@ async def main() -> None:
                 "elapsed_s": round(now - started, 1),
                 "health": health_dict,
                 "health_failures": failures,
+                "consecutive_healthy_s": round(consecutive_healthy_s, 1),
+                "er2_reconnect_events": reconnect_events,
                 "posture_hz": round(hz, 2),
                 "posture_frames": frames,
                 "capture_frame_bytes": 0 if frame is None else len(frame.jpeg),
@@ -91,6 +104,8 @@ async def main() -> None:
             "final": True,
             "elapsed_s": round(time.monotonic() - started, 1),
             "health_failures": failures,
+            "consecutive_healthy_s": round(consecutive_healthy_s, 1),
+            "er2_reconnect_events": reconnect_events,
             "posture_avg_hz": round(runtime.posture.frames_sent / max(time.monotonic() - started, 1), 2),
             "memory_rows": memory_rows(config.scribe.db_path),
             "mem_current": current,
