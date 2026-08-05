@@ -128,6 +128,7 @@ async def test_cerebellum_sends_frame_as_live_video():
             sent.update(kwargs)
 
     service._session = Session()
+    service._connected = True
     frame = SimpleNamespace(jpeg=b"jpeg")
     await service.send_video(frame)
 

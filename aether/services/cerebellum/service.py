@@ -30,6 +30,10 @@ TextHandler = Callable[[str], Awaitable[None]]
 TranscriptHandler = Callable[[str], None]
 
 
+class _ReconnectRequested(Exception):
+    """服务端要求当前 receive 流退出并重连。"""
+
+
 class CerebellumService:
     """ER2 Live 会话"""
 
@@ -50,11 +54,15 @@ class CerebellumService:
         self._resumption_token: Optional[str] = None
         self._generating = False
         self._connected = False
+        self._stopping = False
+        self._generation = 0
         self._on_tool_call: Optional[ToolCallHandler] = None
         self._on_text: Optional[TextHandler] = None
         self._on_transcript: Optional[TranscriptHandler] = None
         self._input_transcript_parts: list[str] = []
         self._send_lock = asyncio.Lock()
+        self._reconnect_lock = asyncio.Lock()
+        self._reconnect_task: Optional[asyncio.Task] = None
 
     # ── 注入 ───────────────────────────────────────────────
 
@@ -70,6 +78,7 @@ class CerebellumService:
     # ── 生命周期 ───────────────────────────────────────────
 
     async def start(self) -> None:
+        self._stopping = False
         await self.connect()
 
     async def connect(self) -> None:
@@ -82,10 +91,13 @@ class CerebellumService:
         config = self._build_config()
 
         logger.info("[Cerebellum] 连接 %s ...", self._config.model)
-        self._session_cm = self._client.aio.live.connect(
+        session_cm = self._client.aio.live.connect(
             model=self._config.model, config=config
         )
-        self._session = await self._session_cm.__aenter__()
+        session = await session_cm.__aenter__()
+        self._session_cm = session_cm
+        self._session = session
+        self._generation += 1
         self._connected = True
         logger.info("[Cerebellum] 会话已建立")
 
@@ -109,15 +121,26 @@ class CerebellumService:
         return config
 
     async def stop(self) -> None:
+        self._stopping = True
         self._connected = False
-        if self._session_cm is not None:
-            try:
-                await self._session_cm.__aexit__(None, None, None)
-            except Exception:
-                pass
+        reconnect_task = self._reconnect_task
+        if reconnect_task is not None and reconnect_task is not asyncio.current_task():
+            reconnect_task.cancel()
+            await asyncio.gather(reconnect_task, return_exceptions=True)
+        await self._discard_session()
+        logger.info("[Cerebellum] 已断开")
+
+    async def _discard_session(self) -> None:
+        """先摘除 session，使所有发送立即静默丢弃，再关闭旧连接。"""
+        session_cm = self._session_cm
         self._session = None
         self._session_cm = None
-        logger.info("[Cerebellum] 已断开")
+        self._connected = False
+        if session_cm is not None:
+            try:
+                await session_cm.__aexit__(None, None, None)
+            except Exception:
+                pass
 
     async def health(self) -> str:
         return "ok" if self._connected else "stopped"
@@ -133,69 +156,96 @@ class CerebellumService:
 
     # ── 发送 ───────────────────────────────────────────────
 
-    async def send_audio(self, chunk: AudioChunk) -> None:
-        if self._session is None:
+    async def _send(self, operation: Callable[[Any], Awaitable[None]]) -> None:
+        if not self._connected or self._session is None or self._stopping:
             return
         async with self._send_lock:
+            session = self._session
+            generation = self._generation
+            if not self._connected or session is None or self._stopping:
+                return
             try:
-                await self._session.send_realtime_input(
-                    audio=types.Blob(
-                        data=chunk.pcm,
-                        mime_type=f"audio/pcm;rate={chunk.sample_rate}",
-                    )
-                )
+                await operation(session)
+            except asyncio.CancelledError:
+                raise
             except Exception as exc:
-                logger.warning("[Cerebellum] 音频发送失败：%s", exc)
-                self._connected = False
+                # 仅第一个失败者记录并摘除旧会话；排队发送随后会静默丢弃。
+                if session is self._session:
+                    logger.warning("[Cerebellum] 会话发送中断，准备重连：%s", exc)
+                    await self._discard_session()
+                    self._ensure_reconnect(generation)
+
+    def _ensure_reconnect(self, generation: int) -> asyncio.Task:
+        task = self._reconnect_task
+        if task is None or task.done():
+            task = asyncio.create_task(
+                self._reconnect(generation), name="er2_reconnect"
+            )
+            self._reconnect_task = task
+        return task
+
+    async def send_audio(self, chunk: AudioChunk) -> None:
+        async def send(session) -> None:
+            await session.send_realtime_input(
+                audio=types.Blob(
+                    data=chunk.pcm,
+                    mime_type=f"audio/pcm;rate={chunk.sample_rate}",
+                )
+            )
+        await self._send(send)
 
     async def send_video(self, frame: VideoFrame) -> None:
-        if self._session is None:
-            return
-        async with self._send_lock:
-            try:
-                await self._session.send_realtime_input(
-                    video=types.Blob(data=frame.jpeg, mime_type="image/jpeg")
-                )
-            except Exception as exc:
-                logger.warning("[Cerebellum] 画面发送失败：%s", exc)
+        async def send(session) -> None:
+            await session.send_realtime_input(
+                video=types.Blob(data=frame.jpeg, mime_type="image/jpeg")
+            )
+        await self._send(send)
 
     async def send_heartbeat(self, text: str) -> None:
-        if self._session is None:
-            return
-        async with self._send_lock:
-            try:
-                await self._session.send_realtime_input(text=text)
-                logger.debug("[Cerebellum] 心跳已发送")
-            except Exception as exc:
-                logger.warning("[Cerebellum] 心跳发送失败：%s", exc)
+        async def send(session) -> None:
+            await session.send_realtime_input(text=text)
+            logger.debug("[Cerebellum] 心跳已发送")
+        await self._send(send)
 
     async def send_tool_response(self, responses: list) -> None:
         """回传 function_response —— 必须闭合，否则 ER2 会话会卡死"""
-        if self._session is None or not responses:
+        if not responses:
             return
-        async with self._send_lock:
-            try:
-                await self._session.send_tool_response(function_responses=responses)
-            except Exception as exc:
-                logger.error("[Cerebellum] 工具响应回传失败：%s", exc)
+
+        async def send(session) -> None:
+            await session.send_tool_response(function_responses=responses)
+        await self._send(send)
 
     # ── 接收 ───────────────────────────────────────────────
 
     async def receive_loop(self) -> None:
-        """持续接收服务端消息"""
-        while self._connected:
+        """持续接收服务端消息；包括 1000 OK 正常结束在内均重连。"""
+        while not self._stopping:
+            if not self._connected or self._session is None:
+                await self._ensure_reconnect(self._generation)
+                continue
+
+            session = self._session
+            generation = self._generation
             try:
-                if self._session is None:
-                    await asyncio.sleep(0.5)
-                    continue
-                async for chunk in self._session.receive():
+                async for chunk in session.receive():
                     await self._handle(chunk)
+                if not self._stopping and session is self._session:
+                    logger.warning("[Cerebellum] 接收流已正常关闭，准备重连")
             except asyncio.CancelledError:
                 raise
+            except _ReconnectRequested:
+                pass
             except Exception as exc:
-                logger.error("[Cerebellum] 接收中断：%s", exc)
+                if session is self._session:
+                    logger.warning("[Cerebellum] 接收中断，准备重连：%s", exc)
+            finally:
                 self._generating = False
-                await self._reconnect()
+
+            if not self._stopping and session is self._session:
+                await self._discard_session()
+            if not self._stopping:
+                await self._ensure_reconnect(generation)
 
     async def _handle(self, chunk) -> None:
         server_content = getattr(chunk, "server_content", None)
@@ -231,19 +281,31 @@ class CerebellumService:
 
         if getattr(chunk, "go_away", None) is not None:
             logger.warning("[Cerebellum] 收到 GoAway，准备重连")
-            await self._reconnect()
+            raise _ReconnectRequested
 
-    async def _reconnect(self) -> None:
-        """用恢复句柄重连；失败则冷启动"""
-        await asyncio.sleep(1.0)
-        try:
-            if self._session_cm is not None:
+    async def _reconnect(self, generation: Optional[int] = None) -> None:
+        """串行重连；失败时退避重试，成功后仅保留一个新 session。"""
+        if generation is None:
+            generation = self._generation
+        async with self._reconnect_lock:
+            if self._stopping:
+                return
+            if self._connected and self._generation != generation:
+                return
+
+            await self._discard_session()
+            delay = 1.0
+            while not self._stopping:
                 try:
-                    await self._session_cm.__aexit__(None, None, None)
-                except Exception:
-                    pass
-            await self.connect()
-        except Exception as exc:
-            logger.error("[Cerebellum] 重连失败：%s", exc)
-            self._resumption_token = None
-            self._connected = False
+                    await asyncio.sleep(delay)
+                    await self.connect()
+                    return
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    # 指数退避同时限制持续故障时的日志频率。
+                    logger.error(
+                        "[Cerebellum] 重连失败，%.0f 秒后重试：%s", delay, exc
+                    )
+                    self._resumption_token = None
+                    delay = min(delay * 2.0, 60.0)
