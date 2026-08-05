@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Optional
 
 from ...contracts.observation import BrainOutput
@@ -58,6 +59,8 @@ class BrainService:
     """高频观察循环"""
 
     name = "brain"
+    _QUOTA_COOLDOWN_S = 60.0
+    _FAILURE_LOG_INTERVAL_S = 60.0
 
     def __init__(self, config: BrainConfig) -> None:
         self._config = config
@@ -65,6 +68,27 @@ class BrainService:
         self._last: Optional[BrainOutput] = None
         self._failures = 0
         self._running = False
+        self._cooldown_until = 0.0
+        self._last_failure_log_at = 0.0
+
+    def _in_cooldown(self) -> bool:
+        return time.monotonic() < self._cooldown_until
+
+    def _record_failure(self, exc: Exception, *, quota: bool = False) -> None:
+        self._failures += 1
+        if quota:
+            self._cooldown_until = max(
+                self._cooldown_until, time.monotonic() + self._QUOTA_COOLDOWN_S
+            )
+        now = time.monotonic()
+        if now - self._last_failure_log_at >= self._FAILURE_LOG_INTERVAL_S:
+            logger.warning("[Brain] 请求失败（连续 %d 次）：%s", self._failures, exc)
+            self._last_failure_log_at = now
+
+    @staticmethod
+    def _is_quota_error(exc: Exception) -> bool:
+        text = str(exc).upper()
+        return "429" in text or "RESOURCE_EXHAUSTED" in text
 
     # ── 生命周期 ───────────────────────────────────────────
 
@@ -88,7 +112,7 @@ class BrainService:
             return "disabled"
         if self._client is None:
             return "degraded"
-        return "ok" if self._failures < 3 else "degraded"
+        return "ok" if self._failures < 3 and not self._in_cooldown() else "degraded"
 
     @property
     def enabled(self) -> bool:
@@ -102,7 +126,7 @@ class BrainService:
 
     async def evaluate_memory(self, blocks: list[dict[str, str]]) -> list[dict[str, str]]:
         """批量裁决记忆重要性；失败时让调用方回退本地启发式。"""
-        if not self.enabled or not blocks:
+        if not self.enabled or not blocks or self._in_cooldown():
             return []
 
         prompt = (
@@ -127,7 +151,7 @@ class BrainService:
                 raise ValueError("返回条目数量与输入不一致")
             return [item for item in parsed if isinstance(item, dict)]
         except Exception as exc:
-            logger.warning("[Brain] 记忆裁决失败，回退启发式：%s", exc)
+            self._record_failure(exc, quota=self._is_quota_error(exc))
             return []
 
     async def observe(
@@ -138,7 +162,7 @@ class BrainService:
         memories: str = "",
     ) -> Optional[BrainOutput]:
         """一轮观察。解析失败返回 None，由调用方沿用上轮建议。"""
-        if not self.enabled:
+        if not self.enabled or self._in_cooldown():
             return None
 
         parts: list = [
@@ -171,6 +195,5 @@ class BrainService:
                 logger.info("[Brain] 事件唤醒：%s", parsed.suggested_intent or "未标注")
             return parsed
         except Exception as exc:
-            self._failures += 1
-            logger.error("[Brain] 观察失败：%s", exc)
+            self._record_failure(exc, quota=self._is_quota_error(exc))
             return None
