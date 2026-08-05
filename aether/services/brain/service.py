@@ -88,7 +88,15 @@ class BrainService:
     @staticmethod
     def _is_quota_error(exc: Exception) -> bool:
         text = str(exc).upper()
-        return "429" in text or "RESOURCE_EXHAUSTED" in text
+        code = getattr(exc, "code", None)
+        status = getattr(exc, "status", None)
+        return (
+            code == 429
+            or str(code).upper() == "RESOURCE_EXHAUSTED"
+            or str(status).upper() == "RESOURCE_EXHAUSTED"
+            or "429" in text
+            or "RESOURCE_EXHAUSTED" in text
+        )
 
     # ── 生命周期 ───────────────────────────────────────────
 
