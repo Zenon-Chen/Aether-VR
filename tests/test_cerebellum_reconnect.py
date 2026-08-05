@@ -47,6 +47,32 @@ async def test_receive_turn_end_does_not_reconnect(monkeypatch):
     assert reconnect_calls == 0
 
 @pytest.mark.asyncio
+async def test_reconnect_counter_tracks_fast_reconnects(monkeypatch):
+    service = CerebellumService(SimpleNamespace())
+    service._connected = False
+    service._stopping = False
+
+    async def discard():
+        service._connected = False
+
+    async def connect():
+        service._generation += 1
+        service._connected = True
+
+    async def no_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(service, "_discard_session", discard)
+    monkeypatch.setattr(service, "connect", connect)
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+
+    await service._reconnect(service._generation)
+
+    assert service.reconnect_events == 1
+    assert service.connected
+
+
+@pytest.mark.asyncio
 async def test_send_failure_starts_only_one_reconnect_and_other_sends_drop(monkeypatch):
     """首个旧 session 发送失败后，后续并发发送不再命中它。"""
     service = CerebellumService(SimpleNamespace())

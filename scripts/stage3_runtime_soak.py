@@ -45,9 +45,6 @@ async def main() -> None:
     failures = 0
     cycle = 0
     consecutive_healthy_s = 0.0
-    reconnect_events = 0
-    previous_er2 = "ok"
-
     await runtime.start()
     try:
         while time.monotonic() - started < DURATION_S:
@@ -70,9 +67,7 @@ async def main() -> None:
             else:
                 failures += 1
                 consecutive_healthy_s = 0.0
-            if previous_er2 == "ok" and health_dict["er2"] != "ok":
-                reconnect_events += 1
-            previous_er2 = health_dict["er2"]
+            reconnect_events = runtime.cerebellum.reconnect_events
             frame = runtime.capture.latest_frame()
             current, peak = tracemalloc.get_traced_memory()
             row = {
@@ -105,7 +100,7 @@ async def main() -> None:
             "elapsed_s": round(time.monotonic() - started, 1),
             "health_failures": failures,
             "consecutive_healthy_s": round(consecutive_healthy_s, 1),
-            "er2_reconnect_events": reconnect_events,
+            "er2_reconnect_events": runtime.cerebellum.reconnect_events,
             "posture_avg_hz": round(runtime.posture.frames_sent / max(time.monotonic() - started, 1), 2),
             "memory_rows": memory_rows(config.scribe.db_path),
             "mem_current": current,

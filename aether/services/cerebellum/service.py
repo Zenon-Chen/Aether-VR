@@ -56,6 +56,7 @@ class CerebellumService:
         self._connected = False
         self._stopping = False
         self._generation = 0
+        self._reconnect_events = 0
         self._on_tool_call: Optional[ToolCallHandler] = None
         self._on_text: Optional[TextHandler] = None
         self._on_transcript: Optional[TranscriptHandler] = None
@@ -153,6 +154,10 @@ class CerebellumService:
     @property
     def connected(self) -> bool:
         return self._connected
+
+    @property
+    def reconnect_events(self) -> int:
+        return self._reconnect_events
 
     # ── 发送 ───────────────────────────────────────────────
 
@@ -309,6 +314,7 @@ class CerebellumService:
                 return
 
             await self._discard_session()
+            self._reconnect_events += 1
             delay = 1.0
             while not self._stopping:
                 try:
