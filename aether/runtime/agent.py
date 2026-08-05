@@ -3,10 +3,10 @@
 这是唯一知道「所有模块如何连接」的地方。各服务彼此不直接引用，
 全部通过 contracts 与 core 交互，因此可以单独替换或拆成独立进程。
 
-进程模型（混合）：
-    本进程   core + capture + cerebellum + speech + avatar + locomotion + brain
-    独立进程 posture-service（常驻 UDP 保活，可 python -m aether.services.posture）
-    独立进程 dart-service（WSL2）
+进程模型（当前默认）：
+    本进程   core + capture + cerebellum + speech + avatar + locomotion + brain + posture
+    外部服务 DART（默认通过固定 HTTP URL 访问）
+    sidecar 组件 MotionProviderSupervisor / BundleRegistry 尚未默认接线
 """
 
 from __future__ import annotations

@@ -85,7 +85,7 @@ class DartConfig(BaseModel):
 
 
 class PostureConfig(BaseModel):
-    """DART → SteamVR 六设备桥"""
+    """姿态输出配置：SteamVR 六设备桥与持续保活参数。"""
     enabled: bool = True
     bridge_host: str = "127.0.0.1"
     bridge_port: int = 4242        # driver.cpp kPort，改动需同步 C++

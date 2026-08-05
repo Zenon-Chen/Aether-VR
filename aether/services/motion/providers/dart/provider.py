@@ -1,4 +1,4 @@
-"""DART HTTP API 的动作供应商适配器。"""
+"""DART HTTP API 的动作生成器适配器。"""
 
 from __future__ import annotations
 

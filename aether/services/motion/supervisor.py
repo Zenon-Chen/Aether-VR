@@ -1,4 +1,4 @@
-"""供应商中立动作 sidecar 的进程与版本生命周期管理。"""
+"""动作生成器 sidecar 的进程与版本生命周期管理。"""
 from __future__ import annotations
 
 import asyncio

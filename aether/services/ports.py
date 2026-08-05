@@ -70,7 +70,7 @@ class SpeechPort(Protocol):
 
 @runtime_checkable
 class MotionProviderPort(Protocol):
-    """供应商中立的动作生成端口。"""
+    """所有动作生成器共同实现的统一端口。"""
     async def start(self) -> None: ...
     async def close(self) -> None: ...
     async def health(self) -> MotionHealthReport: ...
@@ -81,7 +81,7 @@ class MotionProviderPort(Protocol):
 
 @runtime_checkable
 class MotionTranslatorPort(Protocol):
-    """把供应商响应转换为规范动作。"""
+    """把专有动作响应转换为标准动作数据。"""
     def translate(
         self, payload: Any, *, request_id: str, provider_id: str
     ) -> CanonicalMotion: ...
@@ -89,7 +89,7 @@ class MotionTranslatorPort(Protocol):
 
 @runtime_checkable
 class PosturePort(Protocol):
-    """DART → SteamVR 六设备桥
+    """姿态输出端口：向 SteamVR 六设备桥持续推送规范化姿态。
 
     必须常驻推流：驱动 1 秒收不到包即把设备标记为失联。
     """

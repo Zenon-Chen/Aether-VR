@@ -1,4 +1,4 @@
-"""供应商中立的动作生成契约。"""
+"""动作生成器中立的标准动作契约。"""
 
 from __future__ import annotations
 
@@ -60,7 +60,7 @@ class MotionHealthReport:
 
 
 class MotionProviderError(RuntimeError):
-    """动作供应商边界上的稳定错误类型。"""
+    """动作生成器边界上的稳定错误类型。"""
 
     def __init__(self, code: MotionErrorCode, message: str, *, retryable: bool = False) -> None:
         super().__init__(message)
