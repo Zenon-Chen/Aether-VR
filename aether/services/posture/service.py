@@ -44,6 +44,10 @@ class PostureService:
         self._running = False
 
     async def start(self) -> None:
+        # Keep compatibility with legacy test doubles while real providers own startup.
+        start = getattr(self._provider, "start", None)
+        if start is not None:
+            await start()
         self._sink.start()
         self._running = True
         await self._playback.start()

@@ -30,6 +30,10 @@ class DartMotionProvider:
         self._client = client or httpx.AsyncClient(timeout=timeout_s)
         self._owns_client = client is None
         self._translator = translator or DartTranslator()
+        self._token = token
+
+    async def start(self) -> None:
+        return None
 
     async def close(self) -> None:
         if self._owns_client:
@@ -62,13 +66,21 @@ class DartMotionProvider:
             raise MotionProviderError(code, str(exc), retryable=exc.response.status_code >= 500) from exc
         except httpx.RequestError as exc:
             raise MotionProviderError(MotionErrorCode.UNAVAILABLE, str(exc), retryable=True) from exc
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise MotionProviderError(
+                MotionErrorCode.INVALID_RESPONSE, "动作响应不是有效JSON"
+            ) from exc
         return self._translator.translate(
-            response.json(), request_id=request.request_id, provider_id="dart"
+            payload, request_id=request.request_id, provider_id="dart"
         )
 
     async def _report(self, path: str) -> MotionHealthReport:
         try:
-            response = await self._client.get(f"{self._base_url}{path}", headers=self._headers)
+            response = await self._client.get(
+                f"{self._base_url}{path}", headers=self._headers
+            )
             healthy = response.status_code == 200
             try:
                 details: dict[str, Any] = response.json()

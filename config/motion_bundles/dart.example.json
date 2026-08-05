@@ -1,0 +1,21 @@
+{
+  "provider_id": "dart-motion",
+  "version": "unreleased",
+  "executable": "{bundle_dir}/runtime/python.exe",
+  "args": ["{bundle_dir}/server.py"],
+  "workdir": "{bundle_dir}",
+  "env": {
+    "DART_CHECKPOINT": "{bundle_dir}/model/checkpoint.ckpt"
+  },
+  "startup_timeout": 120,
+  "max_restarts": 2,
+  "health_path": "/health",
+  "log_path": "logs/provider.log",
+  "sha256": null,
+  "signature": null,
+  "release_blockers": [
+    "DART Python/PyTorch runtime and model assets are not bundled yet",
+    "Checkpoint, CLIP, SMPL-X assets and licenses require release verification",
+    "GPU backend is target-specific; ONNX/WinML is not part of this bundle"
+  ]
+}
