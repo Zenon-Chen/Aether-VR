@@ -94,6 +94,68 @@ async def test_send_failure_starts_only_one_reconnect_and_other_sends_drop(monke
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_message", "token_after"),
+    [
+        ("received 1007 (invalid frame payload data)", None),
+        ("Request contains an invalid argument", None),
+        ("received 1006 (connection closed abnormally)", "resume-me"),
+        ("network unreachable", "resume-me"),
+    ],
+)
+async def test_send_failure_only_discards_invalid_resumption_handle(
+    monkeypatch, error_message, token_after
+):
+    service = CerebellumService(SimpleNamespace())
+    service._resumption_token = "resume-me"
+    service._session = object()
+    service._connected = True
+    monkeypatch.setattr(service, "_ensure_reconnect", lambda _generation: None)
+
+    async def fail(_session):
+        raise RuntimeError(error_message)
+
+    await service._send(fail)
+
+    assert service._resumption_token == token_after
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error_message", "token_after"),
+    [
+        ("received 1007; invalid frame payload", None),
+        ("Request contains an invalid argument", None),
+        ("received 1006 (connection closed abnormally)", "resume-me"),
+    ],
+)
+async def test_receive_failure_only_discards_invalid_resumption_handle(
+    monkeypatch, error_message, token_after
+):
+    service = CerebellumService(SimpleNamespace())
+    service._resumption_token = "resume-me"
+    service._connected = True
+
+    class BrokenSession:
+        def receive(self):
+            async def messages():
+                raise RuntimeError(error_message)
+                yield  # pragma: no cover
+
+            return messages()
+
+    service._session = BrokenSession()
+
+    async def reconnect(_generation=None):
+        service._stopping = True
+
+    monkeypatch.setattr(service, "_reconnect", reconnect)
+    await service.receive_loop()
+
+    assert service._resumption_token == token_after
+
+
+@pytest.mark.asyncio
 async def test_sends_are_silent_while_disconnected(caplog):
     service = CerebellumService(SimpleNamespace())
     service._session = SimpleNamespace()

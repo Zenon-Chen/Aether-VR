@@ -156,6 +156,16 @@ class CerebellumService:
 
     # ── 发送 ───────────────────────────────────────────────
 
+    @staticmethod
+    def _invalidates_resumption(exc: Exception) -> bool:
+        """1007/无效参数类协议错误表示当前 resumption handle 不可再用。"""
+        code = getattr(exc, "code", None)
+        message = str(exc).lower()
+        return code == 1007 or any(
+            marker in message
+            for marker in ("1007", "invalid argument", "invalid frame payload")
+        )
+
     async def _send(self, operation: Callable[[Any], Awaitable[None]]) -> None:
         if not self._connected or self._session is None or self._stopping:
             return
@@ -172,6 +182,8 @@ class CerebellumService:
                 # 仅第一个失败者记录并摘除旧会话；排队发送随后会静默丢弃。
                 if session is self._session:
                     logger.warning("[Cerebellum] 会话发送中断，准备重连：%s", exc)
+                    if self._invalidates_resumption(exc):
+                        self._resumption_token = None
                     await self._discard_session()
                     self._ensure_reconnect(generation)
 
@@ -240,6 +252,8 @@ class CerebellumService:
             except Exception as exc:
                 if session is self._session:
                     logger.warning("[Cerebellum] 接收中断，准备重连：%s", exc)
+                    if self._invalidates_resumption(exc):
+                        self._resumption_token = None
             finally:
                 self._generating = False
 
