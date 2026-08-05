@@ -28,6 +28,8 @@ from ..services.cerebellum import (
     CerebellumService, PlanRejected, is_long_running, parse_tool_call,
 )
 from ..services.locomotion import LocomotionService
+from ..services.motion.providers.dart import DartMotionProvider
+from ..services.ports import MotionProviderPort
 from ..services.posture import PostureService
 from ..services.scribe import ScribeService
 from ..services.speech import SpeechService
@@ -38,7 +40,12 @@ logger = logging.getLogger(__name__)
 class AetherRuntime:
     """组合根"""
 
-    def __init__(self, config: AetherConfig) -> None:
+    def __init__(
+        self,
+        config: AetherConfig,
+        *,
+        motion_provider: MotionProviderPort | None = None,
+    ) -> None:
         self.config = config
 
         # ── 核心 ────────────────────────────────────────
@@ -52,7 +59,13 @@ class AetherRuntime:
         self.avatar = AvatarService(config.avatar, config.osc)
         self.locomotion = LocomotionService(config.locomotion, config.osc)
         self.speech = SpeechService(config.speech)
-        self.posture = PostureService(config.posture, config.dart)
+        self.motion_provider = motion_provider or DartMotionProvider(
+            f"http://{config.dart.host}:{config.dart.port}",
+            timeout_s=config.dart.timeout_s,
+        )
+        self.posture = PostureService(
+            config.posture, config.dart, motion_provider=self.motion_provider
+        )
         self.brain = BrainService(config.brain)
         self.scribe = ScribeService(config.scribe)
         self.scribe.set_evaluator(self.brain.evaluate_memory)

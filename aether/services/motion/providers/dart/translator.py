@@ -20,6 +20,7 @@ class DartTranslator:
         if not poses:
             raise MotionProviderError(MotionErrorCode.INVALID_RESPONSE, "动作响应缺少姿态")
         translations = _normalize_frames(payload.get("trans")) or [(0.0, 0.0, 0.0)]
+        positions_payload = _normalize_frames(payload.get("joints"), joint_rows=True)
         try:
             rotations = tuple(
                 tuple(axis_angle_to_quaternion(row) for row in _joint_rows(pose))
@@ -29,6 +30,12 @@ class DartTranslator:
                 tuple(float(v) for v in translations[min(i, len(translations) - 1)][:3])
                 for i in range(len(poses))
             )  # type: ignore[assignment]
+            positions: tuple[tuple[Vec3, ...], ...] = ()
+            if positions_payload:
+                positions = tuple(
+                    tuple(tuple(float(v) for v in joint[:3]) for joint in frame[:22])
+                    for frame in positions_payload
+                )
             fps = float(payload.get("framerate") or payload.get("fps") or 30.0)
         except (TypeError, ValueError, IndexError) as exc:
             raise MotionProviderError(
@@ -47,6 +54,7 @@ class DartTranslator:
             units="meters",
             root_translations=roots,
             joint_rotations=rotations,
+            joint_positions=positions,
         )
 
 
@@ -56,12 +64,13 @@ def _joint_rows(pose: Any) -> list[Any]:
     return list(pose[:22])
 
 
-def _normalize_frames(value: Any) -> list[Any] | None:
+def _normalize_frames(value: Any, *, joint_rows: bool = False) -> list[Any] | None:
     if value is None or not isinstance(value, (list, tuple)) or not value:
         return None
     first = value[0]
     if not isinstance(first, (list, tuple)):
         return [value] if len(value) in (3, 66) else None
-    if len(value) == 22 and len(first) == 3 and not isinstance(first[0], (list, tuple)):
+    if joint_rows and len(value) == 22 and len(first) == 3 \
+            and not isinstance(first[0], (list, tuple)):
         return [value]
     return list(value)

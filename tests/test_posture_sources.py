@@ -6,9 +6,8 @@ import time
 
 from aether.contracts.frame import DevicePose, PostureFrame
 from aether.infra.config import DartConfig, PostureConfig
-from aether.services.posture.service import (
-    PostureMode, PostureService, _apply_scope, _with_repeat,
-)
+from aether.services.motion.providers.dart.provider import _with_repeat
+from aether.services.posture.service import PostureMode, PostureService, _apply_scope
 
 
 def _free_udp_port() -> int:

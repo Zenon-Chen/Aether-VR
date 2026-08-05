@@ -40,6 +40,7 @@ class CanonicalMotion:
     units: str
     root_translations: tuple[Vec3, ...]
     joint_rotations: tuple[tuple[Quaternion, ...], ...]
+    joint_positions: tuple[tuple[Vec3, ...], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

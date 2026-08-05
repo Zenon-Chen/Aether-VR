@@ -29,6 +29,7 @@ def test_public_motion_contract_is_serializable_and_vendor_neutral() -> None:
     assert motion.frame_count == 2
     assert len(motion.joint_rotations[0]) == 22
     assert serialized["root_translations"][1] == (0.1, 0.0, 0.9)
+    assert len(motion.joint_positions[0]) == 22
     assert not any("dart" in name or "steamvr" in name or "device" in name for name in names)
     assert not {"poses", "pose", "trans", "joints", "framerate"} & names
 
