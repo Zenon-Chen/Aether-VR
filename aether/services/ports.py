@@ -11,6 +11,9 @@ from typing import Any, AsyncIterator, Optional, Protocol, runtime_checkable
 from ..contracts.facts import WorldFacts
 from ..contracts.frame import PostureFrame
 from ..contracts.observation import BrainOutput
+from ..contracts.motion import (
+    CanonicalMotion, MotionCapabilities, MotionHealthReport, MotionRequest,
+)
 from ..contracts.perception import AudioChunk, VideoFrame
 from ..contracts.plan import Plan
 
@@ -66,6 +69,23 @@ class SpeechPort(Protocol):
 
 
 @runtime_checkable
+class MotionProviderPort(Protocol):
+    """供应商中立的动作生成端口。"""
+    async def health(self) -> MotionHealthReport: ...
+    async def status(self) -> MotionHealthReport: ...
+    def capabilities(self) -> MotionCapabilities: ...
+    async def generate(self, request: MotionRequest) -> CanonicalMotion: ...
+
+
+@runtime_checkable
+class MotionTranslatorPort(Protocol):
+    """把供应商响应转换为规范动作。"""
+    def translate(
+        self, payload: Any, *, request_id: str, provider_id: str
+    ) -> CanonicalMotion: ...
+
+
+@runtime_checkable
 class PosturePort(Protocol):
     """DART → SteamVR 六设备桥
 
@@ -104,6 +124,7 @@ class ScribePort(Protocol):
 
 __all__ = [
     "Service", "CapturePort", "BrainPort", "CerebellumPort", "SpeechPort",
-    "PosturePort", "AvatarPort", "LocomotionPort", "ScribePort",
+    "MotionProviderPort", "MotionTranslatorPort", "PosturePort", "AvatarPort",
+    "LocomotionPort", "ScribePort",
     "WorldFacts", "Plan",
 ]

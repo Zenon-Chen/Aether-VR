@@ -17,6 +17,10 @@ from .plan import Channel, ActionKind, PlanStep, Plan, StepResult, PlanResult
 from .facts import ChannelState, ActivePlan, ServiceHealth, WorldFacts
 from .observation import Observation, BrainOutput
 from .perception import AudioChunk, VideoFrame
+from .motion import (
+    CanonicalMotion, MotionCapabilities, MotionErrorCode, MotionHealthReport,
+    MotionProviderError, MotionRequest,
+)
 
 __all__ = [
     # frame
@@ -29,4 +33,7 @@ __all__ = [
     "Observation", "BrainOutput",
     # perception
     "AudioChunk", "VideoFrame",
+    # motion
+    "MotionRequest", "CanonicalMotion", "MotionCapabilities", "MotionHealthReport",
+    "MotionErrorCode", "MotionProviderError",
 ]
