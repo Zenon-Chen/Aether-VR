@@ -24,7 +24,7 @@ cerebellum:
 brain:
   enabled: true
   model: "gemini-3.5-flash-lite"
-  interval_s: 20
+  interval_s: 60  # 2 小时约 120 次观察，为 Scribe evaluator 保留每日额度
   max_output_tokens: 512
   context_limit_tokens: 500000
   evict_target_tokens: 350000     # 驱逐滞回，避免频繁触发

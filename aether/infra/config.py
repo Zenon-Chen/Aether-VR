@@ -43,7 +43,7 @@ class BrainConfig(BaseModel):
     enabled: bool = False          # 阶段 2 接入
     model: str = "gemini-3.5-flash-lite"
     api_key: str = ""
-    interval_s: float = 1.5
+    interval_s: float = 60.0
     max_output_tokens: int = 512
     context_limit_tokens: int = 500_000
     evict_target_tokens: int = 350_000

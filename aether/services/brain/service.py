@@ -59,7 +59,8 @@ class BrainService:
     """高频观察循环"""
 
     name = "brain"
-    _QUOTA_COOLDOWN_S = 60.0
+    _SHORT_QUOTA_COOLDOWN_S = 60.0
+    _DAILY_QUOTA_COOLDOWN_S = 6 * 60 * 60.0
     _FAILURE_LOG_INTERVAL_S = 60.0
 
     def __init__(self, config: BrainConfig) -> None:
@@ -69,34 +70,67 @@ class BrainService:
         self._failures = 0
         self._running = False
         self._cooldown_until = 0.0
+        self._cooldown_reason: Optional[str] = None
         self._last_failure_log_at = 0.0
 
     def _in_cooldown(self) -> bool:
-        return time.monotonic() < self._cooldown_until
+        return self.cooldown_remaining_s > 0
 
-    def _record_failure(self, exc: Exception, *, quota: bool = False) -> None:
+    @property
+    def cooldown_remaining_s(self) -> float:
+        return max(0.0, self._cooldown_until - time.monotonic())
+
+    @property
+    def cooldown_reason(self) -> Optional[str]:
+        return self._cooldown_reason if self._in_cooldown() else None
+
+    def _record_failure(self, exc: Exception, *, quota_kind: Optional[str] = None) -> None:
         self._failures += 1
-        if quota:
-            self._cooldown_until = max(
-                self._cooldown_until, time.monotonic() + self._QUOTA_COOLDOWN_S
-            )
         now = time.monotonic()
+        if quota_kind:
+            cooldown_s = (
+                self._DAILY_QUOTA_COOLDOWN_S
+                if quota_kind == "daily_quota_exhausted"
+                else self._SHORT_QUOTA_COOLDOWN_S
+            )
+            previous_reason = self.cooldown_reason
+            self._cooldown_until = max(self._cooldown_until, now + cooldown_s)
+            self._cooldown_reason = quota_kind
+            # A daily exhaustion is a state transition: report it once, then make no
+            # requests (and therefore produce no repeated 429 logs) during cooldown.
+            if quota_kind == "daily_quota_exhausted" and previous_reason != quota_kind:
+                logger.warning(
+                    "[Brain] 每日免费额度已耗尽，冷却至少 %.0f 秒：%s",
+                    cooldown_s,
+                    exc,
+                )
+                self._last_failure_log_at = now
+                return
         if now - self._last_failure_log_at >= self._FAILURE_LOG_INTERVAL_S:
             logger.warning("[Brain] 请求失败（连续 %d 次）：%s", self._failures, exc)
             self._last_failure_log_at = now
 
     @staticmethod
-    def _is_quota_error(exc: Exception) -> bool:
+    def _quota_kind(exc: Exception) -> Optional[str]:
         text = str(exc).upper()
         code = getattr(exc, "code", None)
         status = getattr(exc, "status", None)
-        return (
+        is_quota = (
             code == 429
             or str(code).upper() == "RESOURCE_EXHAUSTED"
             or str(status).upper() == "RESOURCE_EXHAUSTED"
             or "429" in text
             or "RESOURCE_EXHAUSTED" in text
         )
+        if not is_quota:
+            return None
+        if (
+            "GENERATEREQUESTSPERDAYPERPROJECTPERMODEL-FREETIER" in text
+            or "REQUESTS PER DAY" in text
+            or "DAILY" in text
+        ):
+            return "daily_quota_exhausted"
+        return "short_quota_exhausted"
 
     # ── 生命周期 ───────────────────────────────────────────
 
@@ -159,7 +193,7 @@ class BrainService:
                 raise ValueError("返回条目数量与输入不一致")
             return [item for item in parsed if isinstance(item, dict)]
         except Exception as exc:
-            self._record_failure(exc, quota=self._is_quota_error(exc))
+            self._record_failure(exc, quota_kind=self._quota_kind(exc))
             return []
 
     async def observe(
@@ -203,5 +237,5 @@ class BrainService:
                 logger.info("[Brain] 事件唤醒：%s", parsed.suggested_intent or "未标注")
             return parsed
         except Exception as exc:
-            self._record_failure(exc, quota=self._is_quota_error(exc))
+            self._record_failure(exc, quota_kind=self._quota_kind(exc))
             return None

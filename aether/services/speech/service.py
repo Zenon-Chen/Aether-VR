@@ -41,6 +41,21 @@ except Exception:  # pragma: no cover
 #: 中文/英文句子边界
 _SENTENCE_SPLIT = re.compile(r"(?<=[。！？!?；;\n])")
 
+#: Gemini 瞬时过载只在服务内做少量重试；Scheduler 仍保留一次机械重试。
+_TRANSIENT_RETRY_DELAYS = (0.25, 0.75)
+
+
+class SpeechUnavailableError(OSError):
+    """没有任何可播放语音 —— 可由 Scheduler 作为机械失败重试。"""
+
+
+def _is_transient_unavailable(exc: BaseException) -> bool:
+    """识别 Gemini 过载响应，兼容 SDK 异常文本和 code/status 属性。"""
+    code = str(getattr(exc, "code", "")).upper()
+    status = str(getattr(exc, "status", "")).upper()
+    message = str(exc).upper()
+    return "503" in code or "503" in message or "UNAVAILABLE" in status or "UNAVAILABLE" in message
+
 
 class SpeechService:
     """语音合成与播放"""
@@ -101,9 +116,12 @@ class SpeechService:
                 pcm = await self._synthesize(segment)
                 if pcm is None:
                     pcm = self._fallback
-                    if pcm is None:
-                        continue
+                if pcm is None:
+                    continue
                 total += await self._play(pcm)
+
+            if not self._stop_flag.is_set() and total <= 0.0:
+                raise SpeechUnavailableError("TTS 未产生可播放音频")
             return total
 
     async def halt(self) -> None:
@@ -135,29 +153,41 @@ class SpeechService:
     async def _synthesize(self, text: str) -> Optional[bytes]:
         if self._client is None:
             return None
-        try:
-            response = await asyncio.to_thread(
-                self._client.models.generate_content,
-                model=self._config.model,
-                contents=text,
-                config=genai_types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=genai_types.SpeechConfig(
-                        voice_config=genai_types.VoiceConfig(
-                            prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(
-                                voice_name=self._config.voice_name,
+
+        attempts = len(_TRANSIENT_RETRY_DELAYS) + 1
+        for attempt in range(attempts):
+            try:
+                response = await asyncio.to_thread(
+                    self._client.models.generate_content,
+                    model=self._config.model,
+                    contents=text,
+                    config=genai_types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=genai_types.SpeechConfig(
+                            voice_config=genai_types.VoiceConfig(
+                                prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(
+                                    voice_name=self._config.voice_name,
+                                )
                             )
-                        )
+                        ),
                     ),
-                ),
-            )
-            part = response.candidates[0].content.parts[0]
-            self._healthy = True
-            return part.inline_data.data
-        except Exception as exc:
-            logger.error("[Speech] 合成失败：%s", exc)
-            self._healthy = False
-            return None
+                )
+                part = response.candidates[0].content.parts[0]
+                self._healthy = True
+                return part.inline_data.data
+            except Exception as exc:
+                self._healthy = False
+                if _is_transient_unavailable(exc) and attempt < attempts - 1:
+                    delay = _TRANSIENT_RETRY_DELAYS[attempt]
+                    logger.warning(
+                        "[Speech] Gemini 暂时不可用，%.2fs 后重试（%d/%d）：%s",
+                        delay, attempt + 1, attempts - 1, exc,
+                    )
+                    await asyncio.sleep(delay)
+                    continue
+                logger.error("[Speech] 合成失败：%s", exc)
+                return None
+        return None
 
     # ── 播放 ───────────────────────────────────────────────
 
@@ -172,6 +202,7 @@ class SpeechService:
                 sd.play, samples, samplerate=rate, device=self._device_index, blocking=True
             )
         except Exception as exc:
+            self._healthy = False
             logger.error("[Speech] 播放失败：%s", exc)
             return 0.0
         return duration
