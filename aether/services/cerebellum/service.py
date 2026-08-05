@@ -230,8 +230,9 @@ class CerebellumService:
             try:
                 async for chunk in session.receive():
                     await self._handle(chunk)
-                if not self._stopping and session is self._session:
-                    logger.warning("[Cerebellum] 接收流已正常关闭，准备重连")
+                # SDK 的 receive() 在每个模型回合结束后正常返回；这不是
+                # WebSocket 断开，继续下一次 receive 即可。真正断连会抛异常。
+                continue
             except asyncio.CancelledError:
                 raise
             except _ReconnectRequested:

@@ -8,38 +8,43 @@ import pytest
 from aether.services.cerebellum.service import CerebellumService
 
 
-class _CleanlyClosedSession:
+class _TurnEndedSession:
+    def __init__(self, stop_after: int = 2):
+        self.calls = 0
+        self.stop_after = stop_after
+        self.owner = None
+
     def receive(self):
         async def messages():
+            self.calls += 1
             await asyncio.sleep(0)
+            if self.calls >= self.stop_after:
+                self.owner._stopping = True
             if False:
                 yield None
         return messages()
 
 
 @pytest.mark.asyncio
-async def test_clean_receive_close_reconnects(monkeypatch):
-    """1000 OK 会让 receive() 正常结束，也必须触发一次重连。"""
+async def test_receive_turn_end_does_not_reconnect(monkeypatch):
+    """Live SDK 的 receive() 每个 turn 完成都会正常返回，不应误判为断线。"""
     service = CerebellumService(SimpleNamespace())
-    old_session = _CleanlyClosedSession()
-    service._session = old_session
+    session = _TurnEndedSession()
+    session.owner = service
+    service._session = session
     service._connected = True
     service._stopping = False
-    reconnected = asyncio.Event()
+    reconnect_calls = 0
 
     async def reconnect(_generation=None):
-        service._session = SimpleNamespace()
-        service._connected = True
-        reconnected.set()
+        nonlocal reconnect_calls
+        reconnect_calls += 1
 
     monkeypatch.setattr(service, "_reconnect", reconnect)
-    task = asyncio.create_task(service.receive_loop())
-    await asyncio.wait_for(reconnected.wait(), timeout=0.2)
+    await service.receive_loop()
 
-    service._stopping = True
-    task.cancel()
-    await asyncio.gather(task, return_exceptions=True)
-
+    assert session.calls == 2
+    assert reconnect_calls == 0
 
 @pytest.mark.asyncio
 async def test_send_failure_starts_only_one_reconnect_and_other_sends_drop(monkeypatch):
