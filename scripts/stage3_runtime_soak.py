@@ -83,6 +83,8 @@ async def main() -> None:
                 "capture_frame_bytes": 0 if frame is None else len(frame.jpeg),
                 "brain_failures": runtime.brain._failures,
                 "brain_has_output": runtime.brain.last_output is not None,
+                "brain_cooldown_reason": runtime.brain.cooldown_reason,
+                "brain_cooldown_remaining_s": round(runtime.brain.cooldown_remaining_s, 1),
                 "scribe_context_tokens": runtime.scribe.context_tokens,
                 "memory_rows": memory_rows(config.scribe.db_path),
                 "tasks": len(asyncio.all_tasks()),
