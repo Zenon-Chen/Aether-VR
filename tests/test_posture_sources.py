@@ -6,7 +6,9 @@ import time
 
 from aether.contracts.frame import DevicePose, PostureFrame
 from aether.infra.config import DartConfig, PostureConfig
-from aether.services.posture.service import PostureMode, PostureService, _apply_scope
+from aether.services.posture.service import (
+    PostureMode, PostureService, _apply_scope, _with_repeat,
+)
 
 
 def _free_udp_port() -> int:
@@ -15,6 +17,18 @@ def _free_udp_port() -> int:
     port = sock.getsockname()[1]
     sock.close()
     return port
+
+
+def test_natural_language_commas_are_not_dart_segment_delimiters() -> None:
+    prompt = (
+        "clutch hair and head in frustration, then shake head, "
+        "then throw hands down in anger"
+    )
+    result = _with_repeat(prompt, 4.0)
+
+    assert "," not in result
+    assert result.endswith("*8")
+    assert "frustration and then shake head" in result
 
 
 def test_motion_scope_selects_three_or_six_generated_devices() -> None:

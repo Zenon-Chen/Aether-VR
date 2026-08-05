@@ -274,11 +274,14 @@ def _apply_scope(
 
 
 def _with_repeat(prompt: str, duration_s: float) -> str:
-    """DART 用 `动作*N` 表示重复次数；一个 primitive 约 0.5 秒"""
-    if "*" in prompt:
-        return prompt
+    """DART 用逗号分段且要求每段都有 `*N`；自然语言逗号需先消歧。"""
+    normalized = " and ".join(
+        part.strip() for part in prompt.split(",") if part.strip()
+    )
+    if "*" in normalized:
+        return normalized
     repeats = max(1, round(duration_s / 0.5))
-    return f"{prompt}*{repeats}"
+    return f"{normalized}*{repeats}"
 
 
 def _resample(frames: list[PostureFrame], src_fps: float, dst_fps: float) -> list[PostureFrame]:
