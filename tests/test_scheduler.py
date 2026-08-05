@@ -103,3 +103,32 @@ async def test_channels_released_after_plan():
     sched.register(ActionKind.SPEAK, _record([], "s"))
     await sched.submit(Plan(steps=(PlanStep(1, ActionKind.SPEAK, {"text": "hi"}),)))
     assert state.facts.busy_channels() == ()
+
+
+@pytest.mark.asyncio
+async def test_scheduler_rejects_direct_over_budget_plan():
+    sched = Scheduler(StateStore(), max_plan_seconds=1.0)
+    result = await sched.submit(Plan(steps=(
+        PlanStep(1, ActionKind.WAIT, {"duration_s": 2.0}),
+    )))
+    assert result.status is StepStatus.FAILED
+    assert "超过" in result.detail
+
+
+@pytest.mark.asyncio
+async def test_plan_wall_clock_deadline_cancels_and_releases_channels():
+    state = StateStore()
+    sched = Scheduler(state, max_plan_seconds=0.5)
+
+    async def slow(_step):
+        await asyncio.sleep(1)
+
+    sched.register(ActionKind.SPEAK, slow)
+    result = await sched.submit(Plan(steps=(
+        PlanStep(1, ActionKind.SPEAK, {"text": "x"}),
+    )))
+    assert result.status is StepStatus.FAILED
+    assert "墙钟期限" in result.detail
+    assert state.facts.busy_channels() == ()
+    assert state.facts.active_plan is None
+    assert any("墙钟期限" in item for item in state.facts.recent_results)

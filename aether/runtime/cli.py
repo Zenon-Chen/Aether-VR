@@ -23,6 +23,7 @@ BANNER = """
   /face <表情>       测试表情
   /move <方向> [秒]  测试移动（forward / turn_left ...）
   /motion <描述>     测试 DART 动作生成
+  /approach [目标]   高频视觉伺服接近人物（默认 person）
   /idle              姿态回到站立
   /plan              测试并行计划（说话 + 挥手）
   /stop              紧急停止
@@ -69,6 +70,9 @@ async def run_cli(runtime) -> None:
                 await runtime.scheduler.submit(
                     _one(ActionKind.GENERATE_MOTION, {"prompt": argument, "duration_s": 3.0})
                 )
+            elif command == "/approach":
+                result = await runtime.approach_target(argument or "person")
+                print(f"视觉伺服停止：{result.reason}（{result.steps} 步）")
             elif command == "/idle":
                 await runtime.posture.go_idle()
             elif command == "/plan":
@@ -96,7 +100,7 @@ def _print_status(runtime) -> None:
     print(render_facts(facts))
     print("— 服务 —")
     services = facts.services
-    for name in ("er2", "brain", "tts", "dart", "posture", "vrchat_osc"):
+    for name in ("er2", "brain", "tts", "dart", "posture", "vrchat_osc", "vision"):
         print(f"  {name:<12} {getattr(services, name)}")
     if runtime.config.posture.enabled:
         print(f"  posture mode {runtime.posture.mode.value}")

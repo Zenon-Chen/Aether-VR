@@ -21,6 +21,7 @@ from typing import Awaitable, Callable, Optional
 from ..contracts.facts import ActivePlan
 from ..contracts.plan import (
     ActionKind, Channel, Plan, PlanResult, PlanStep, StepResult, StepStatus,
+    estimated_plan_seconds,
 )
 from .state_store import StateStore
 
@@ -48,8 +49,11 @@ class Scheduler:
     这让 avatar / speech / posture / locomotion 各服务可独立替换。
     """
 
-    def __init__(self, state: StateStore, on_plan_done=None) -> None:
+    def __init__(
+        self, state: StateStore, on_plan_done=None, max_plan_seconds: float = 5.0
+    ) -> None:
         self._state = state
+        self._max_plan_seconds = float(max_plan_seconds)
         self._executors: dict[ActionKind, Executor] = {}
         self._channel_locks: dict[Channel, asyncio.Lock] = {
             ch: asyncio.Lock() for ch in Channel
@@ -72,6 +76,15 @@ class Scheduler:
 
     async def submit(self, plan: Plan) -> PlanResult:
         """提交计划并等待完成。同一时刻只跑一个计划。"""
+        try:
+            estimated = estimated_plan_seconds(plan)
+        except ValueError as exc:
+            return PlanResult(plan.plan_id, StepStatus.FAILED, detail=f"计划时间参数无效: {exc}")
+        if estimated > self._max_plan_seconds:
+            return PlanResult(
+                plan.plan_id, StepStatus.FAILED,
+                detail=f"计划预计 {estimated:.2f}s，超过 {self._max_plan_seconds:.2f}s 预算",
+            )
         async with self._run_lock:
             if self._current is not None and not self._current.done():
                 logger.warning("[Sched] 已有计划在执行，取消旧计划 %s", self._current_plan_id)
@@ -82,7 +95,23 @@ class Scheduler:
             self._current_plan_id = plan.plan_id
 
         try:
-            return await task
+            async with asyncio.timeout(self._max_plan_seconds):
+                return await task
+        except TimeoutError:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            await self._state.release_all_channels()
+            result = PlanResult(
+                plan.plan_id, StepStatus.FAILED,
+                detail=f"计划执行超过 {self._max_plan_seconds:.2f}s 墙钟期限",
+            )
+            await self._state.record_result(result.summary())
+            if self._on_plan_done is not None:
+                try:
+                    await self._on_plan_done(result)
+                except Exception:
+                    logger.exception("[Sched] 计划超时回调失败")
+            return result
         except asyncio.CancelledError:
             return PlanResult(plan.plan_id, StepStatus.CANCELLED, detail="被新计划取代")
         finally:
@@ -231,7 +260,8 @@ class Scheduler:
             return StepResult(step.seq, step.action, StepStatus.SUCCESS, detail or "")
 
         except asyncio.CancelledError:
-            return StepResult(step.seq, step.action, StepStatus.CANCELLED, "被取消")
+            # 必须向上传播，让计划级 deadline、新计划替换和紧急停止真正生效。
+            raise
         except SemanticError as exc:
             return StepResult(step.seq, step.action, StepStatus.FAILED, str(exc))
         except Exception as exc:

@@ -70,6 +70,7 @@ class SpeechService:
         self._lock = asyncio.Lock()
         self._stop_flag = asyncio.Event()
         self._fallback: Optional[bytes] = None
+        self._fallback_ready = False
         self._healthy = False
 
     # ── 生命周期 ───────────────────────────────────────────
@@ -83,6 +84,11 @@ class SpeechService:
 
         self._device_index = self._resolve_device()
         self._fallback = self._load_fallback()
+        self._fallback_ready = self._fallback is not None
+        if not self._fallback_ready:
+            raise SpeechUnavailableError(
+                f"fallback WAV 不可用: {self._config.fallback_sound}"
+            )
         logger.info(
             "[Speech] 就绪（设备=%s 音色=%s）",
             self._config.output_device or "系统默认", self._config.voice_name,
@@ -93,7 +99,16 @@ class SpeechService:
         self._client = None
 
     async def health(self) -> str:
-        return "ok" if self._healthy else "degraded"
+        return "ok" if self._healthy and self._fallback_ready else "degraded"
+
+    async def status(self) -> dict[str, object]:
+        """返回可观察详情；health 保持 ServiceHealth 所需的稳定枚举值。"""
+        return {
+            "status": await self.health(),
+            "tts_ready": self._healthy,
+            "fallback_ready": self._fallback_ready,
+            "fallback_sound": self._config.fallback_sound,
+        }
 
     # ── 说话 ───────────────────────────────────────────────
 
@@ -114,11 +129,16 @@ class SpeechService:
                     logger.info("[Speech] 被打断，剩余段落丢弃")
                     break
                 pcm = await self._synthesize(segment)
-                if pcm is None:
+                using_fallback = pcm is None
+                if using_fallback:
                     pcm = self._fallback
                 if pcm is None:
-                    continue
-                total += await self._play(pcm)
+                    raise SpeechUnavailableError("TTS 失败且 fallback WAV 不可用")
+                played = await self._play(pcm)
+                if played <= 0.0:
+                    source = "fallback WAV" if using_fallback else "TTS 音频"
+                    raise SpeechUnavailableError(f"{source} 播放失败")
+                total += played
 
             if not self._stop_flag.is_set() and total <= 0.0:
                 raise SpeechUnavailableError("TTS 未产生可播放音频")
@@ -228,7 +248,18 @@ class SpeechService:
             return None
         try:
             with wave.open(str(path), "rb") as handle:
-                return handle.readframes(handle.getnframes())
-        except Exception:
-            logger.warning("[Speech] 兜底音加载失败：%s", path)
+                if handle.getsampwidth() != 2:
+                    raise ValueError("必须为 PCM16")
+                if handle.getnchannels() != 1:
+                    raise ValueError("必须为 mono")
+                if handle.getframerate() != self._config.output_sample_rate:
+                    raise ValueError(
+                        f"采样率必须为 {self._config.output_sample_rate}Hz"
+                    )
+                frames = handle.readframes(handle.getnframes())
+                if not frames:
+                    raise ValueError("WAV 无音频帧")
+                return frames
+        except Exception as exc:
+            logger.warning("[Speech] 兜底音加载失败：%s（%s）", path, exc)
             return None

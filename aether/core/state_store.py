@@ -40,6 +40,7 @@ class StateStore:
         self._last_speech = ""
         self._reflex_log: deque[str] = deque(maxlen=_MAX_REFLEX_LOG)
         self._emergency = False
+        self._vision_status = "idle"
         self._listeners: list[Listener] = []
         self._snapshot = self._build()
 
@@ -122,6 +123,11 @@ class StateStore:
             self._reflex_log.append(entry)
             await self._publish()
 
+    async def set_vision_status(self, status: str) -> None:
+        async with self._lock:
+            self._vision_status = status
+            await self._publish()
+
     async def set_emergency(self, stopped: bool) -> None:
         async with self._lock:
             self._emergency = stopped
@@ -140,6 +146,7 @@ class StateStore:
             last_speech=self._last_speech,
             reflex_log=tuple(self._reflex_log),
             emergency_stopped=self._emergency,
+            vision_status=self._vision_status,
         )
 
     async def _publish(self) -> None:

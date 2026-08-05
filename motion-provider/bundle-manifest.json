@@ -1,0 +1,25 @@
+{
+  "provider_id": "aether.motion.dart",
+  "version": "0.1.0",
+  "executable": "{bundle_dir}/.venv/Scripts/motion-provider.exe",
+  "args": ["--serve"],
+  "workdir": "{bundle_dir}",
+  "env": {
+    "MOTION_PROVIDER_HOST": "{host}",
+    "MOTION_PROVIDER_PORT": "{port}",
+    "MOTION_PROVIDER_TOKEN": "{token}",
+    "MOTION_BUNDLE_DIR": "{bundle_dir}"
+  },
+  "startup_timeout": 120.0,
+  "max_restarts": 2,
+  "health_path": "/health",
+  "log_path": "sidecar.log",
+  "sha256": null,
+  "signature": null,
+  "release_blockers": [
+    "DART model assets/checkpoint must be installed separately",
+    "Intel XPU DART deep operators require hardware validation before production",
+    "This is the Windows template; Linux/ROCm releases must emit a .venv/bin manifest",
+    "Windows AMD/ROCm is unsupported"
+  ]
+}

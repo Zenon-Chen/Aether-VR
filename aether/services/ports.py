@@ -16,6 +16,7 @@ from ..contracts.motion import (
 )
 from ..contracts.perception import AudioChunk, VideoFrame
 from ..contracts.plan import Plan
+from ..contracts.vision import TargetObservation
 
 
 @runtime_checkable
@@ -30,10 +31,17 @@ class Service(Protocol):
 
 @runtime_checkable
 class CapturePort(Protocol):
-    """感知采集：屏幕 1FPS + 麦克风 100ms 块"""
+    """感知采集：屏幕 1FPS + 麦克风 100ms 块，并支持视觉伺服新鲜帧。"""
     def audio_stream(self) -> AsyncIterator[AudioChunk]: ...
     def video_stream(self) -> AsyncIterator[VideoFrame]: ...
     def latest_frame(self) -> Optional[VideoFrame]: ...
+    async def fresh_frame(self, timeout_s: float = 1.0) -> Optional[VideoFrame]: ...
+
+
+@runtime_checkable
+class VisionTrackerPort(Protocol):
+    degraded: bool
+    async def detect(self, frame: VideoFrame) -> tuple[TargetObservation, ...]: ...
 
 
 @runtime_checkable
@@ -127,6 +135,6 @@ class ScribePort(Protocol):
 __all__ = [
     "Service", "CapturePort", "BrainPort", "CerebellumPort", "SpeechPort",
     "MotionProviderPort", "MotionTranslatorPort", "PosturePort", "AvatarPort",
-    "LocomotionPort", "ScribePort",
+    "LocomotionPort", "ScribePort", "VisionTrackerPort",
     "WorldFacts", "Plan",
 ]

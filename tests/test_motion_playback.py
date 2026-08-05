@@ -7,6 +7,7 @@ import time
 from aether.contracts.motion import (
     CanonicalMotion, MotionCapabilities, MotionHealthReport, MotionRequest,
 )
+from aether.contracts.plan import ActionKind, PlanStep
 from aether.infra.config import AetherConfig, DartConfig, PostureConfig
 from aether.runtime.agent import AetherRuntime
 from aether.services.posture import PostureMode, PostureService
@@ -116,3 +117,47 @@ def test_runtime_accepts_provider_injection() -> None:
     runtime = AetherRuntime(AetherConfig(), motion_provider=provider)
     assert runtime.motion_provider is provider
     assert runtime.posture._provider is provider
+
+
+def test_runtime_motion_failure_uses_configured_prerecorded_fallback() -> None:
+    async def scenario() -> None:
+        runtime = AetherRuntime(AetherConfig())
+        calls: list[str] = []
+
+        async def fail(*_args):
+            raise RuntimeError("provider down")
+
+        async def play(name: str):
+            calls.append(name)
+
+        runtime.posture.play = fail
+        runtime.avatar.play_action = play
+        result = await runtime._exec_motion(PlanStep(
+            1, ActionKind.GENERATE_MOTION,
+            {"prompt": "hello", "scope": "upper_body", "duration_s": 1.0},
+        ))
+        assert calls == ["wave"]
+        assert "provider down" in result and "wave" in result
+
+    asyncio.run(scenario())
+
+
+def test_runtime_full_body_prerecorded_action_owns_and_restores_body() -> None:
+    async def scenario() -> None:
+        runtime = AetherRuntime(AetherConfig())
+        calls: list[str] = []
+
+        async def record(name):
+            calls.append(name)
+
+        runtime.locomotion.halt = lambda: record("halt")
+        runtime.posture.freeze = lambda: record("freeze")
+        runtime.avatar.play_action = lambda _name: record("play")
+        runtime.avatar.reset = lambda: record("idle")
+        runtime.posture.resume = lambda: record("resume")
+        await runtime._exec_play_action(PlanStep(
+            1, ActionKind.PLAY_ACTION, {"name": "bow", "full_body": True},
+        ))
+        assert calls == ["halt", "freeze", "play", "idle", "resume"]
+
+    asyncio.run(scenario())

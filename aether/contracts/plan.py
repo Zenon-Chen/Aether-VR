@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import itertools
+import math
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -66,6 +67,56 @@ class PlanStep:
         if self.action is ActionKind.PLAY_ACTION and self.args.get("full_body"):
             return FULL_BODY_CHANNELS
         return CHANNEL_USAGE.get(self.action, frozenset())
+
+
+def estimated_step_seconds(step: PlanStep) -> float:
+    """返回计划预算使用的保守时长估计，并拒绝无效时间参数。"""
+    for key in ("duration_s", "duration", "timeout"):
+        if key not in step.args:
+            continue
+        try:
+            value = float(step.args[key])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"第{step.seq}步 {key} 不是有效数字") from exc
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(f"第{step.seq}步 {key} 必须是有限非负数")
+
+    if "duration_s" in step.args:
+        return float(step.args["duration_s"])
+    if "duration" in step.args:
+        return float(step.args["duration"])
+    if step.action is ActionKind.SPEAK:
+        text = str(step.args.get("text", ""))
+        return max(0.4, len(text) / 8.0)
+    if step.action is ActionKind.WAIT:
+        return 0.5
+    if step.action in (ActionKind.EXPRESSION, ActionKind.PLAY_ACTION):
+        return 2.0
+    return 2.0
+
+
+def estimated_plan_seconds(plan: "Plan") -> float:
+    """按调度语义估算墙钟时长；parallel 仅在通道不冲突时取并发最大值。"""
+    total = 0.0
+    group: list[PlanStep] = []
+    occupied: frozenset[Channel] = frozenset()
+
+    def flush() -> float:
+        return max((estimated_step_seconds(item) for item in group), default=0.0)
+
+    for step in plan.steps:
+        channels = step.channels()
+        if not group:
+            group = [step]
+            occupied = channels
+        elif step.parallel and not (occupied & channels):
+            group.append(step)
+            occupied = occupied | channels
+        else:
+            total += flush()
+            group = [step]
+            occupied = channels
+    return total + flush()
 
 
 @dataclass(frozen=True, slots=True)

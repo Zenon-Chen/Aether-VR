@@ -11,10 +11,14 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import time
+from pathlib import Path
 from typing import Optional
+
+import yaml
 
 from ...contracts.observation import BrainOutput
 from ...contracts.perception import VideoFrame
@@ -32,27 +36,29 @@ except Exception:  # pragma: no cover
     _HAS_GENAI = False
 
 
-PERSONA_PROMPT = """你是一个生活在 VRChat 中的虚拟角色的「意识」。
-
-你负责：观察画面与对话、维持稳定人格、起草角色要说的话。
-你不负责：具体怎么动。那是运动编排系统的事。
-
-每轮你会收到：当前世界事实、最近的对话转写、一帧画面。
-你必须只输出一个 JSON 对象，不要任何解释文字或 markdown 围栏：
-
-{
-  "observations": [{"event": "事件名", "target": "对象描述", "confidence": 0.8}],
-  "suggested_reply": "角色此刻应该说的一句话，符合人设，口语化，不超过40字",
-  "suggested_intent": "简短意图标签，如 greet_warmly",
-  "wake_er2": false,
-  "memory_write": ["值得长期记住的事实"]
-}
-
-规则：
-- 没有值得回应的事情时，suggested_reply 留空字符串，wake_er2 为 false。
-- 有人打招呼、靠近、提问时，wake_er2 设为 true。
-- suggested_reply 是角色的真实台词，不要写成第三人称描述。
+OUTPUT_CONTRACT = """固定输出契约：只输出一个 JSON 对象，不要解释或 markdown 围栏：
+{"observations":[{"event":"事件名","target":"对象描述","confidence":0.8}],
+"suggested_reply":"真实口语台词，不超过40字","suggested_intent":"简短意图标签",
+"wake_er2":false,"memory_write":["值得长期记住的事实"]}
+没有值得回应的事情时 suggested_reply 为空且 wake_er2=false；有人打招呼、靠近或提问时 wake_er2=true。
 """
+
+
+def _load_persona(path_text: str) -> tuple[str, str, str, str]:
+    path = Path(path_text)
+    raw = path.read_bytes()
+    digest = hashlib.sha256(raw).hexdigest()
+    payload = yaml.safe_load(raw.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError(f"persona 不是 YAML 对象: {path}")
+    persona_id = str(payload.get("id", "")).strip()
+    version = str(payload.get("version", "")).strip()
+    required = ("identity", "values", "voice", "boundaries", "relationship_memory", "response_schema")
+    missing = [key for key in required if not payload.get(key)]
+    if not persona_id or not version or missing:
+        raise ValueError(f"persona 缺少必填字段: {', '.join(missing or ['id/version'])}")
+    rendered = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False).strip()
+    return persona_id, version, digest, f"人格 profile：\n{rendered}\n\n{OUTPUT_CONTRACT}"
 
 
 class BrainService:
@@ -72,6 +78,10 @@ class BrainService:
         self._cooldown_until = 0.0
         self._cooldown_reason: Optional[str] = None
         self._last_failure_log_at = 0.0
+        self._persona_id = ""
+        self._persona_version = ""
+        self._persona_hash = ""
+        self._system_instruction = ""
 
     def _in_cooldown(self) -> bool:
         return self.cooldown_remaining_s > 0
@@ -139,11 +149,23 @@ class BrainService:
         if not self._config.enabled:
             logger.info("[Brain] 未启用（阶段 1 使用固定心跳模板）")
             return
+        try:
+            (
+                self._persona_id, self._persona_version, self._persona_hash,
+                self._system_instruction,
+            ) = _load_persona(self._config.persona_path)
+        except (OSError, UnicodeError, yaml.YAMLError, ValueError) as exc:
+            logger.error("[Brain] persona 加载失败 %s: %s", self._config.persona_path, exc)
+            return
         if not _HAS_GENAI or not self._config.api_key:
             logger.warning("[Brain] Gemini 不可用，观察层禁用")
             return
         self._client = genai.Client(api_key=self._config.api_key)
-        logger.info("[Brain] 就绪：%s", self._config.model)
+        logger.info(
+            "[Brain] 就绪：%s persona=%s@%s sha256=%s",
+            self._config.model, self._persona_id, self._persona_version,
+            self._persona_hash[:12],
+        )
 
     async def stop(self) -> None:
         self._running = False
@@ -163,6 +185,22 @@ class BrainService:
     @property
     def last_output(self) -> Optional[BrainOutput]:
         return self._last
+
+    @property
+    def persona_id(self) -> str:
+        return self._persona_id
+
+    @property
+    def persona_version(self) -> str:
+        return self._persona_version
+
+    @property
+    def persona_hash(self) -> str:
+        return self._persona_hash
+
+    @property
+    def system_instruction(self) -> str:
+        return self._system_instruction
 
     # ── 观察 ───────────────────────────────────────────────
 
@@ -221,7 +259,7 @@ class BrainService:
                 model=self._config.model,
                 contents=parts,
                 config=types.GenerateContentConfig(
-                    system_instruction=PERSONA_PROMPT,
+                    system_instruction=self._system_instruction,
                     max_output_tokens=self._config.max_output_tokens,
                     response_mime_type="application/json",
                 ),

@@ -87,7 +87,27 @@ def test_full_body_action_is_marked_before_scheduling():
     ]}, max_steps=6, full_body_actions=("bow", "sit", "stand"))
 
     assert plan.steps[0].args["full_body"] is True
+    assert plan.steps[0].channels() == frozenset({
+        Channel.UPPER_BODY, Channel.LOWER_BODY, Channel.MOVEMENT,
+    })
     assert plan.steps[1].args["full_body"] is False
+    assert plan.steps[1].channels() == frozenset({Channel.UPPER_BODY})
+
+
+def test_single_play_action_marks_full_body_before_scheduling():
+    bow = parse_tool_call(
+        "play_action", {"name": "bow"}, max_steps=6,
+        full_body_actions=("bow", "sit", "stand"),
+    )
+    wave = parse_tool_call(
+        "play_action", {"name": "wave"}, max_steps=6,
+        full_body_actions=("bow", "sit", "stand"),
+    )
+    assert bow.steps[0].args["full_body"] is True
+    assert bow.steps[0].channels() == frozenset({
+        Channel.UPPER_BODY, Channel.LOWER_BODY, Channel.MOVEMENT,
+    })
+    assert wave.steps[0].args["full_body"] is False
 
 
 def test_text_ref_maps_to_use_suggested():
@@ -125,9 +145,24 @@ def test_long_running_classification():
     assert not is_long_running(parse_tool_call("speak", {"text": "hi"}, max_steps=6))
 
 
-def test_move_duration_clamped_by_normalizer():
-    plan = parse_tool_call("move", {"direction": "forward", "duration_s": "bad"}, max_steps=6)
-    assert plan.steps[0].args["duration_s"] == 1.0
+def test_invalid_duration_rejected():
+    for value in ("bad", -1, float("nan"), float("inf")):
+        with pytest.raises(PlanRejected):
+            parse_tool_call("move", {"duration_s": value}, max_steps=6)
+
+
+def test_plan_duration_budget_serial_and_parallel():
+    with pytest.raises(PlanRejected, match="超过"):
+        parse_tool_call("execute_plan", {"steps": [
+            {"action": "wait", "args": {"duration_s": 3}},
+            {"action": "wait", "args": {"duration_s": 3}},
+        ]}, max_steps=6, max_seconds=5)
+
+    plan = parse_tool_call("execute_plan", {"steps": [
+        {"action": "speak", "args": {"text": "abcdefgh"}},
+        {"action": "play_action", "args": {"name": "wave"}, "parallel": True},
+    ]}, max_steps=6, max_seconds=2)
+    assert len(plan.steps) == 2
 
 
 # ── 大脑输出解析 ───────────────────────────────────────────

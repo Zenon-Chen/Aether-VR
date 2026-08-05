@@ -24,6 +24,7 @@ cerebellum:
 brain:
   enabled: true
   model: "gemini-3.5-flash-lite"
+  persona_path: "docs/personas/aether-default.yaml"
   interval_s: 60  # 2 小时约 120 次观察，为 Scribe evaluator 保留每日额度
   max_output_tokens: 512
   context_limit_tokens: 500000
@@ -96,6 +97,9 @@ avatar:
     sit: 2.0
     stand: 2.0
   full_body_actions: ["bow", "sit", "stand"]
+  motion_fallback_actions:
+    full_body: bow
+    upper_body: wave
   expressions:
     neutral: 0
     smile: 1
@@ -108,6 +112,20 @@ locomotion:
   max_duration_s: 3.0
   watchdog_s: 5.0                 # 硬保险：超时强制归零
   pulse_s: 0.4                    # 走-看-走 脉冲
+
+# ── 高频视觉伺服（auto 优先 OpenCV CPU，不可用时安全降级） ──
+vision:
+  enabled: true
+  detector: "auto"
+  detect_fps: 4.0             # 独立于 Brain/ER2 的 1 FPS 视频推送
+  fresh_frame_timeout_s: 1.0
+  near_ratio: 0.25
+  confidence_min: 0.6
+  center_tolerance: 0.12
+  pulse_s: 0.4
+  timeout_s: 30.0
+  max_steps: 30
+  stagnation_steps: 4
 
 # ── 日志 ──────────────────────────────────────
 log:

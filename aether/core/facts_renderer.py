@@ -45,6 +45,9 @@ def render_facts(facts: WorldFacts, now: float | None = None) -> str:
     if facts.last_speech:
         lines.append(f"角色刚才说了：「{facts.last_speech}」")
 
+    if facts.vision_status != "idle":
+        lines.append(f"视觉伺服：{facts.vision_status}。")
+
     if facts.reflex_log:
         lines.append("反射记录：" + "；".join(facts.reflex_log) + "。")
 

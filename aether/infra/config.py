@@ -43,6 +43,7 @@ class BrainConfig(BaseModel):
     enabled: bool = False          # 阶段 2 接入
     model: str = "gemini-3.5-flash-lite"
     api_key: str = ""
+    persona_path: str = "docs/personas/aether-default.yaml"
     interval_s: float = 60.0
     max_output_tokens: int = 512
     context_limit_tokens: int = 500_000
@@ -115,6 +116,9 @@ class AvatarConfig(BaseModel):
         "clap": 1.5, "point": 1.2, "think": 2.5, "sit": 2.0, "stand": 2.0,
     })
     full_body_actions: list[str] = Field(default_factory=lambda: ["bow", "sit", "stand"])
+    motion_fallback_actions: dict[str, str] = Field(default_factory=lambda: {
+        "full_body": "bow", "upper_body": "wave",
+    })
     expressions: dict[str, int] = Field(default_factory=lambda: {
         "neutral": 0, "smile": 1, "surprised": 2, "sad": 3, "angry": 4,
     })
@@ -125,6 +129,20 @@ class LocomotionConfig(BaseModel):
     #: ER2 断连或超时无续期 → 强制归零
     watchdog_s: float = 5.0
     pulse_s: float = 0.4           # 走-看-走 的单次脉冲时长
+
+
+class VisionConfig(BaseModel):
+    enabled: bool = True
+    detector: str = "auto"
+    detect_fps: float = 4.0
+    fresh_frame_timeout_s: float = 1.0
+    near_ratio: float = 0.25
+    confidence_min: float = 0.6
+    center_tolerance: float = 0.12
+    pulse_s: float = 0.4
+    timeout_s: float = 30.0
+    max_steps: int = 30
+    stagnation_steps: int = 4
 
 
 class LogConfig(BaseModel):
@@ -145,6 +163,7 @@ class AetherConfig(BaseModel):
     osc: OSCConfig = Field(default_factory=OSCConfig)
     avatar: AvatarConfig = Field(default_factory=AvatarConfig)
     locomotion: LocomotionConfig = Field(default_factory=LocomotionConfig)
+    vision: VisionConfig = Field(default_factory=VisionConfig)
     log: LogConfig = Field(default_factory=LogConfig)
 
 
@@ -157,6 +176,18 @@ def load_config(path: str | Path | None = None) -> AetherConfig:
             data = yaml.safe_load(fh) or {}
 
     config = AetherConfig.model_validate(data)
+
+    # 资源路径相对于配置文件目录，而不是易变的进程 cwd。
+    base_dir = target.resolve().parent if target.exists() else Path.cwd()
+    for section, field_name in (
+        (config.brain, "persona_path"),
+        (config.speech, "fallback_sound"),
+        (config.scribe, "db_path"),
+        (config.log, "file"),
+    ):
+        value = Path(getattr(section, field_name))
+        if not value.is_absolute():
+            setattr(section, field_name, str(base_dir / value))
 
     # 环境变量优先：单一 Key 供三处使用
     api_key = os.environ.get("GEMINI_API_KEY", "")

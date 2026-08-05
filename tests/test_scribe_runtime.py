@@ -217,7 +217,11 @@ async def test_runtime_feeds_recent_memory_to_brain_observe():
     runtime.state = StateStore()
     runtime._transcript = ["用户说：你好"]
     runtime.capture = SimpleNamespace(latest_frame=lambda: None)
-    runtime.scribe = SimpleNamespace(recall_recent=_async_value("用户喜欢蓝色"))
+    runtime.scribe = SimpleNamespace(
+        recall_recent=_async_value("用户喜欢蓝色"),
+        render_active_context=lambda: "[user] 用户说：你好",
+        metrics={"pending_blocks": 0, "active_blocks": 1, "active_tokens": 8, "persisted_blocks": 1},
+    )
     observed = {}
 
     async def observe(facts, transcript, frame, memories):
@@ -229,7 +233,7 @@ async def test_runtime_feeds_recent_memory_to_brain_observe():
     await runtime._brain_loop()
 
     assert observed["transcript"] == "用户说：你好"
-    assert observed["memories"] == "用户喜欢蓝色"
+    assert observed["memories"] == "[user] 用户说：你好\n用户喜欢蓝色"
 
 
 @pytest.mark.asyncio

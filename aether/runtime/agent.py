@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 from ..contracts.observation import BrainOutput
 from ..contracts.plan import ActionKind, PlanStep, StepStatus
+from ..contracts.vision import VisionStatus
 from ..core import (
     EmergencyStop, HeartbeatAssembler, Scheduler, StateStore, render_facts,
 )
@@ -33,6 +34,7 @@ from ..services.ports import MotionProviderPort
 from ..services.posture import PostureService
 from ..services.scribe import ScribeService
 from ..services.speech import SpeechService
+from ..services.vision import VisionService
 
 logger = logging.getLogger(__name__)
 
@@ -52,12 +54,17 @@ class AetherRuntime:
         self.state = StateStore()
         self.heartbeat = HeartbeatAssembler()
         self.emergency = EmergencyStop(self.state)
-        self.scheduler = Scheduler(self.state, on_plan_done=self._on_plan_done)
+        self.scheduler = Scheduler(
+            self.state,
+            on_plan_done=self._on_plan_done,
+            max_plan_seconds=config.cerebellum.max_plan_seconds,
+        )
 
         # ── 服务 ────────────────────────────────────────
         self.capture = CaptureService(config.capture)
         self.avatar = AvatarService(config.avatar, config.osc)
         self.locomotion = LocomotionService(config.locomotion, config.osc)
+        self.vision = VisionService(config=config.vision)
         self.speech = SpeechService(config.speech)
         self.motion_provider = motion_provider or DartMotionProvider(
             f"http://{config.dart.host}:{config.dart.port}",
@@ -76,6 +83,8 @@ class AetherRuntime:
         )
 
         self._tasks: list[asyncio.Task] = []
+        self._call_tasks: set[asyncio.Task] = set()
+        self._plan_tasks: set[asyncio.Task] = set()
         self._running = False
         self._user_speaking = False
         self._transcript: list[str] = []
@@ -97,6 +106,8 @@ class AetherRuntime:
         await self.scribe.start()
         await self.brain.start()
         await self.capture.start()
+        if self.config.vision.enabled:
+            await self.vision.start()
 
         self._register_executors()
         self._register_emergency()
@@ -126,9 +137,17 @@ class AetherRuntime:
         await asyncio.gather(*self._tasks, return_exceptions=True)
         self._tasks.clear()
 
+        for task in (*self._call_tasks, *self._plan_tasks):
+            task.cancel()
+        await asyncio.gather(
+            *self._call_tasks, *self._plan_tasks, return_exceptions=True
+        )
+        self._call_tasks.clear()
+        self._plan_tasks.clear()
+
         await self.scheduler.cancel_current("shutdown")
         for service in (
-            self.cerebellum, self.capture, self.brain, self.scribe,
+            self.cerebellum, self.capture, self.vision, self.brain, self.scribe,
             self.posture, self.speech, self.locomotion, self.avatar,
         ):
             try:
@@ -173,15 +192,20 @@ class AetherRuntime:
 
     async def _exec_play_action(self, step: PlanStep) -> str:
         name = step.args.get("name", "")
-        # 预录全身动画期间冻结姿态流，避免两个来源打架
+        # 预录全身动画独占移动与六点姿态；上身动作不碰下身姿态流。
         full_body = self.avatar.is_full_body(name)
-        if full_body and self.config.posture.enabled:
-            await self.posture.freeze()
+        if full_body:
+            await self.locomotion.halt()
+            if self.config.posture.enabled:
+                await self.posture.freeze()
         try:
             await self.avatar.play_action(name)
         finally:
-            if full_body and self.config.posture.enabled:
-                await self.posture.resume()
+            if full_body:
+                # cancellation/OSC failure must not leave either source owning the body.
+                await self.avatar.reset()
+                if self.config.posture.enabled:
+                    await self.posture.resume()
         return name
 
     async def _exec_move(self, step: PlanStep) -> str:
@@ -193,8 +217,27 @@ class AetherRuntime:
     async def _exec_motion(self, step: PlanStep) -> str:
         prompt = step.args.get("prompt", "")
         duration = float(step.args.get("duration_s", 2.0))
-        full_body = step.args.get("scope") == "full_body"
-        return await self.posture.play(prompt, duration, full_body)
+        scope = "full_body" if step.args.get("scope") == "full_body" else "upper_body"
+        try:
+            return await self.posture.play(prompt, duration, scope == "full_body")
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            fallback = self.config.avatar.motion_fallback_actions.get(scope, "")
+            if not fallback or fallback not in self.config.avatar.actions:
+                raise
+            logger.exception(
+                "[Runtime] generate_motion 失败，回退预录动作 %s（scope=%s）",
+                fallback, scope,
+            )
+            # The failed posture playback has returned before fallback starts; use the
+            # same ownership path as a planned prerecorded action.
+            fallback_step = PlanStep(
+                step.seq, ActionKind.PLAY_ACTION,
+                {"name": fallback, "full_body": self.avatar.is_full_body(fallback)},
+            )
+            await self._exec_play_action(fallback_step)
+            return f"动作生成失败（{type(exc).__name__}: {exc}）；已回退 {fallback}"
 
     async def _exec_wait(self, step: PlanStep) -> str:
         span = float(step.args.get("duration_s", 0.5))
@@ -207,6 +250,7 @@ class AetherRuntime:
 
     def _register_emergency(self) -> None:
         self.emergency.register("locomotion", self.locomotion.halt)
+        self.emergency.register("vision", self._cancel_vision)
         self.emergency.register("speech", self.speech.halt)
         self.emergency.register("avatar", self.avatar.reset)
         self.emergency.register(
@@ -214,6 +258,38 @@ class AetherRuntime:
         )
         if self.config.posture.enabled:
             self.emergency.register("posture", self.posture.emergency_reset)
+
+    async def _cancel_vision(self) -> None:
+        self.vision.cancel()
+        await self.locomotion.halt()
+
+    async def approach_target(self, target_id: str):
+        cfg = self.config.vision
+        if not cfg.enabled or getattr(self.vision.tracker, "degraded", False):
+            await self.locomotion.halt()
+            reason = "disabled" if not cfg.enabled else "degraded"
+            result = VisionStatus(state="stopped", target_id=target_id, reason=reason, degraded=True)
+            self.vision.status = result
+            await self.state.set_vision_status(f"{reason}; steps=0; degraded=True")
+            return result
+        await self.state.set_vision_status(f"tracking {target_id}")
+        result = None
+        try:
+            result = await self.vision.approach_target(
+                target_id,
+                frame_source=lambda: self.capture.fresh_frame(cfg.fresh_frame_timeout_s),
+                locomotion=self.locomotion,
+                near_ratio=cfg.near_ratio, confidence_min=cfg.confidence_min,
+                center_tolerance=cfg.center_tolerance, pulse_s=cfg.pulse_s,
+                timeout_s=cfg.timeout_s, max_steps=cfg.max_steps,
+                stagnation_steps=cfg.stagnation_steps, detect_fps=cfg.detect_fps,
+            )
+            return result
+        finally:
+            status = result or self.vision.status
+            await self.state.set_vision_status(
+                f"{status.reason or status.state}; steps={status.steps}; degraded={status.degraded}"
+            )
 
     async def trigger_emergency(self, reason: str) -> float:
         elapsed = await self.emergency.trigger(reason)
@@ -228,12 +304,18 @@ class AetherRuntime:
         logger.debug("[Runtime] ER2 文本：%s", text[:80])
         await self.scribe.note("text", text)
 
+    @staticmethod
+    def _track_task(task: asyncio.Task, tasks: set[asyncio.Task]) -> None:
+        tasks.add(task)
+        task.add_done_callback(tasks.discard)
+
     async def _on_tool_call(self, tool_call) -> None:
         """把工具调用翻译成计划并交给调度器"""
+        if not self._running:
+            return
         for fc in getattr(tool_call, "function_calls", []) or []:
-            asyncio.create_task(
-                self._handle_call(fc), name=f"call:{fc.name}"
-            )
+            task = asyncio.create_task(self._handle_call(fc), name=f"call:{fc.name}")
+            self._track_task(task, self._call_tasks)
 
     async def _handle_call(self, fc) -> None:
         name = fc.name
@@ -255,6 +337,7 @@ class AetherRuntime:
                 name,
                 args,
                 max_steps=self.config.cerebellum.max_plan_steps,
+                max_seconds=self.config.cerebellum.max_plan_seconds,
                 full_body_actions=tuple(self.config.avatar.full_body_actions),
             )
         except PlanRejected as exc:
@@ -273,7 +356,12 @@ class AetherRuntime:
         # 长动作立即 ack，进度靠心跳 [STATUS] 回报；短动作真阻塞
         if is_long_running(plan):
             await self._respond(fc, {"status": "accepted", "plan_id": plan.plan_id})
-            asyncio.create_task(self.scheduler.submit(plan), name=f"plan:{plan.plan_id}")
+            if not self._running:
+                return
+            task = asyncio.create_task(
+                self.scheduler.submit(plan), name=f"plan:{plan.plan_id}"
+            )
+            self._track_task(task, self._plan_tasks)
         else:
             result = await self.scheduler.submit(plan)
             await self._respond(fc, {
@@ -355,7 +443,11 @@ class AetherRuntime:
             if not self.brain.enabled:
                 continue
             try:
-                memories = await self.scribe.recall_recent()
+                active = self.scribe.render_active_context()
+                recent = await self.scribe.recall_recent()
+                persisted_only = [line for line in recent.splitlines() if line not in active]
+                memories = "\n".join(filter(None, (active, "\n".join(persisted_only))))
+                logger.debug("[Scribe] context metrics=%s", self.scribe.metrics)
                 output = await self.brain.observe(
                     render_facts(self.state.facts),
                     "\n".join(self._transcript[-6:]),
@@ -387,6 +479,7 @@ class AetherRuntime:
             "er2": self.cerebellum.health,
             "brain": self.brain.health,
             "vrchat_osc": self.avatar.health,
+            "vision": self.vision.health if self.config.vision.enabled else None,
         }
         for name, probe in checks.items():
             if probe is None:

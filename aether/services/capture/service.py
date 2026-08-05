@@ -104,6 +104,19 @@ class CaptureService:
         """大脑每轮取最新一帧，不必消费整条流"""
         return self._latest
 
+    async def fresh_frame(self, timeout_s: float = 1.0) -> Optional[VideoFrame]:
+        """Capture a new screenshot for servo use, independent of the 1 FPS stream."""
+        if not self._running or not self._config.enabled or not _HAS_VIDEO:
+            return None
+        try:
+            async with asyncio.timeout(timeout_s):
+                frame = await asyncio.to_thread(self._grab)
+        except TimeoutError:
+            return None
+        if frame is not None:
+            self._latest = frame
+        return frame
+
     # ── 音频 ───────────────────────────────────────────────
 
     async def _audio_loop(self) -> None:

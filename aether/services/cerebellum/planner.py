@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from ...contracts.plan import ActionKind, Plan, PlanStep
+from ...contracts.plan import ActionKind, Plan, PlanStep, estimated_plan_seconds
 
 logger = logging.getLogger(__name__)
 
@@ -45,37 +45,45 @@ def parse_tool_call(
     args: dict[str, Any],
     *,
     max_steps: int,
+    max_seconds: float = 5.0,
     full_body_actions: tuple[str, ...] = (),
 ) -> Optional[Plan]:
     """把一次工具调用翻译为 Plan。ack / stop_all 返回 None 由上层特判。"""
     args = args or {}
 
     if name == "execute_plan":
-        return _parse_plan(
+        plan = _parse_plan(
             args, max_steps=max_steps, full_body_actions=full_body_actions
         )
+        return _validate_budget(plan, max_seconds)
 
-    # 单工具调用视为单步计划
+    # 单工具调用视为单步计划，同样必须通过总时长预算。
     if name == "speak":
-        return _single(ActionKind.SPEAK, {
+        plan = _single(ActionKind.SPEAK, {
             "text": str(args.get("text", "")),
             "use_suggested": bool(args.get("use_suggested", False)),
         })
-    if name == "move":
-        return _single(ActionKind.MOVE, {
+    elif name == "move":
+        plan = _single(ActionKind.MOVE, {
             "direction": str(args.get("direction", "forward")),
-            "duration_s": _as_float(args.get("duration_s"), 1.0),
+            "duration_s": _as_float(args.get("duration_s"), 1.0, strict=True),
         })
-    if name == "generate_motion":
-        return _single(ActionKind.GENERATE_MOTION, {
+    elif name in ("play_action", "action"):
+        action_name = str(args.get("name") or args.get("action") or "").strip()
+        normalized = _normalize_args(ActionKind.PLAY_ACTION, {"name": action_name})
+        normalized["full_body"] = action_name in full_body_actions
+        plan = _single(ActionKind.PLAY_ACTION, normalized)
+    elif name == "generate_motion":
+        plan = _single(ActionKind.GENERATE_MOTION, {
             "prompt": str(args.get("prompt", "")),
-            "duration_s": _as_float(args.get("duration_s"), 2.0),
+            "duration_s": _as_float(args.get("duration_s"), 2.0, strict=True),
             "scope": str(args.get("scope", "upper_body")),
         })
-    if name in ("ack", "stop_all"):
+    elif name in ("ack", "stop_all"):
         return None
-
-    raise PlanRejected(f"未知工具: {name}")
+    else:
+        raise PlanRejected(f"未知工具: {name}")
+    return _validate_budget(plan, max_seconds)
 
 
 def _parse_plan(
@@ -136,10 +144,10 @@ def _normalize_args(action: ActionKind, args: dict[str, Any]) -> dict[str, Any]:
             out["use_suggested"] = True
     elif action is ActionKind.MOVE:
         out["direction"] = str(out.get("direction", "forward"))
-        out["duration_s"] = _as_float(out.get("duration_s"), 1.0)
+        out["duration_s"] = _as_float(out.get("duration_s"), 1.0, strict=True)
     elif action is ActionKind.GENERATE_MOTION:
         out["prompt"] = str(out.get("prompt", "") or "")
-        out["duration_s"] = _as_float(out.get("duration_s"), 2.0)
+        out["duration_s"] = _as_float(out.get("duration_s"), 2.0, strict=True)
         scope = str(out.get("scope", "upper_body")).lower()
         out["scope"] = scope if scope in ("upper_body", "full_body") else "upper_body"
     elif action is ActionKind.PLAY_ACTION:
@@ -147,7 +155,7 @@ def _normalize_args(action: ActionKind, args: dict[str, Any]) -> dict[str, Any]:
     elif action is ActionKind.EXPRESSION:
         out["name"] = str(out.get("name") or out.get("expression") or "neutral").strip()
     elif action is ActionKind.WAIT:
-        out["duration_s"] = _as_float(out.get("duration_s"), 0.5)
+        out["duration_s"] = _as_float(out.get("duration_s"), 0.5, strict=True)
     return out
 
 
@@ -158,11 +166,31 @@ def is_long_running(plan: Plan) -> bool:
     return plan.steps[0].action in LONG_ACTIONS
 
 
-def _as_float(value, default: float) -> float:
+def _validate_budget(plan: Plan, max_seconds: float) -> Plan:
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        budget = float(max_seconds)
+        estimated = estimated_plan_seconds(plan)
+    except (TypeError, ValueError) as exc:
+        raise PlanRejected(str(exc)) from exc
+    if budget <= 0 or budget != budget or budget in (float("inf"), float("-inf")):
+        raise PlanRejected("max_seconds 必须是有限正数")
+    if estimated > budget:
+        raise PlanRejected(f"计划预计 {estimated:.2f}s，超过 {budget:.2f}s 预算")
+    return plan
+
+
+def _as_float(value, default: float, *, strict: bool = False) -> float:
+    if value is None:
         return default
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        if strict:
+            raise PlanRejected("时间参数不是有效数字")
+        return default
+    if result < 0 or result != result or result in (float("inf"), float("-inf")):
+        raise PlanRejected("时间参数必须是有限非负数")
+    return result
 
 
 def _as_int(value, default: int) -> int:

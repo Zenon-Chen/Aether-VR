@@ -44,13 +44,14 @@ class ServiceHealth:
     brain: str = "unknown"
     posture: str = "unknown"
     vrchat_osc: str = "unknown"
+    vision: str = "unknown"
 
     def degraded(self) -> tuple[str, ...]:
         return tuple(
             name for name, value in (
                 ("dart", self.dart), ("tts", self.tts), ("er2", self.er2),
                 ("brain", self.brain), ("posture", self.posture),
-                ("vrchat_osc", self.vrchat_osc),
+                ("vrchat_osc", self.vrchat_osc), ("vision", self.vision),
             ) if value not in ("ok", "unknown")
         )
 
@@ -67,6 +68,7 @@ class WorldFacts:
     last_speech: str = ""                     # 角色最近说出口的话
     reflex_log: tuple[str, ...] = ()          # 预留：反射模块动作记录
     emergency_stopped: bool = False
+    vision_status: str = "idle"
 
     def channel(self, ch: Channel) -> ChannelState:
         return self.channels.get(ch, ChannelState())

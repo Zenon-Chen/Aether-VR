@@ -141,6 +141,17 @@ namespace Aether
             Debug.Log("[Aether] Avatar 配置完成：Humanoid + Viseme + 参数 + FX 层 + 场景");
         }
 
+        // Batch-safe regeneration: Unity -batchmode -projectPath avatar-project
+        // -executeMethod Aether.AvatarSetup.GenerateFxController -quit
+        [MenuItem("Aether/Regenerate FX Controller")]
+        public static void GenerateFxController()
+        {
+            Directory.CreateDirectory(OutDir);
+            BuildFxController();
+            AssetDatabase.SaveAssets();
+            Debug.Log("[Aether] AetherFX.controller regenerated");
+        }
+
         [MenuItem("Aether/Build And Test")]
         public static void BuildAndTest()
         {
@@ -229,6 +240,13 @@ namespace Aether
 
             var idle = machine.AddState("idle");
             machine.defaultState = idle;
+            if (applyTracking)
+            {
+                // Idle must explicitly return ownership to the user's trackers.
+                var idleTracking = idle.AddStateMachineBehaviour<
+                    VRC.SDK3.Avatars.Components.VRCAnimatorTrackingControl>();
+                SetTracking(idleTracking, fullBody: true, idle: true);
+            }
 
             foreach (var (name, id) in entries)
             {
@@ -241,12 +259,11 @@ namespace Aether
 
                 if (applyTracking)
                 {
-                    // 入口切 Animation，退出回 Tracking —— 与 posture freeze/resume 配合
-                    var enter = state.AddStateMachineBehaviour<
+                    var tracking = state.AddStateMachineBehaviour<
                         VRC.SDK3.Avatars.Components.VRCAnimatorTrackingControl>();
-                    enter.trackingHead = VRC.SDKBase.VRC_AnimatorTrackingControl.TrackingType.NoChange;
-                    enter.trackingLeftHand = VRC.SDKBase.VRC_AnimatorTrackingControl.TrackingType.Animation;
-                    enter.trackingRightHand = VRC.SDKBase.VRC_AnimatorTrackingControl.TrackingType.Animation;
+                    SetTracking(tracking,
+                        fullBody: name == "bow" || name == "sit" || name == "stand",
+                        idle: false);
                 }
 
                 var to = idle.AddTransition(state);
@@ -259,6 +276,21 @@ namespace Aether
                 back.hasExitTime = false;
                 back.duration = 0.15f;
             }
+        }
+
+        static void SetTracking(
+            VRC.SDK3.Avatars.Components.VRCAnimatorTrackingControl tracking,
+            bool fullBody, bool idle)
+        {
+            var type = idle
+                ? VRC.SDKBase.VRC_AnimatorTrackingControl.TrackingType.Tracking
+                : VRC.SDKBase.VRC_AnimatorTrackingControl.TrackingType.Animation;
+            tracking.trackingHead = fullBody ? type : VRC.SDKBase.VRC_AnimatorTrackingControl.TrackingType.NoChange;
+            tracking.trackingLeftHand = type;
+            tracking.trackingRightHand = type;
+            tracking.trackingHip = fullBody ? type : VRC.SDKBase.VRC_AnimatorTrackingControl.TrackingType.NoChange;
+            tracking.trackingLeftFoot = fullBody ? type : VRC.SDKBase.VRC_AnimatorTrackingControl.TrackingType.NoChange;
+            tracking.trackingRightFoot = fullBody ? type : VRC.SDKBase.VRC_AnimatorTrackingControl.TrackingType.NoChange;
         }
     }
 }

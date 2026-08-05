@@ -59,7 +59,34 @@ async def test_503_retries_with_bounded_backoff_and_recovers_health(monkeypatch)
     assert await service.speak("恢复。") == pytest.approx(0.1)
     assert service._client.models.calls == 3
     assert sleeps == [0.25, 0.75]
-    assert await service.health() == "ok"
+    assert await service.health() == "degraded"
+    status = await service.status()
+    assert status["tts_ready"] is True
+    assert status["fallback_ready"] is False
+
+
+@pytest.mark.asyncio
+async def test_tts_failure_plays_fallback_once_and_returns_duration(monkeypatch):
+    service = _service([RuntimeError("permanent failure")])
+    service._fallback = b"\x01\x00" * 100
+    service._fallback_ready = True
+    played = []
+
+    async def fake_play(pcm):
+        played.append(pcm)
+        return 0.2
+
+    monkeypatch.setattr(service, "_play", fake_play)
+    assert await service.speak("故障。") == pytest.approx(0.2)
+    assert played == [service._fallback]
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_missing_fallback(monkeypatch):
+    service = SpeechService(SpeechConfig(api_key="", fallback_sound="missing.wav"))
+    monkeypatch.setattr(service, "_resolve_device", lambda: None)
+    with pytest.raises(SpeechUnavailableError, match="fallback WAV 不可用"):
+        await service.start()
 
 
 @pytest.mark.asyncio
@@ -72,10 +99,10 @@ async def test_all_segments_failed_without_fallback_raises_retryable_error(monke
 
     monkeypatch.setattr("aether.services.speech.service.asyncio.sleep", fake_sleep)
 
-    with pytest.raises(SpeechUnavailableError, match="未产生可播放音频"):
+    with pytest.raises(SpeechUnavailableError, match="不可用|播放失败"):
         await service.speak("第一段。第二段。")
 
-    assert service._client.models.calls == 6
+    assert service._client.models.calls == 3
     assert await service.health() == "degraded"
 
 
@@ -101,7 +128,7 @@ async def test_scheduler_retries_when_speech_produces_nothing(monkeypatch):
 
     assert result.status is StepStatus.FAILED
     assert service._client.models.calls == 6
-    assert "未产生可播放音频" in result.detail
+    assert "fallback WAV 不可用" in result.detail
 
 
 @pytest.mark.asyncio
@@ -114,6 +141,6 @@ async def test_playback_failure_does_not_count_as_success(monkeypatch):
 
     monkeypatch.setattr(service, "_play", failed_play)
 
-    with pytest.raises(SpeechUnavailableError, match="未产生可播放音频"):
+    with pytest.raises(SpeechUnavailableError, match="不可用|播放失败"):
         await service.speak("播放失败。")
     assert await service.health() == "degraded"

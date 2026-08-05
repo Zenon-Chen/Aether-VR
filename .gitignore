@@ -1,7 +1,9 @@
 ﻿__pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 .pytest_cache/
+motion-provider/build/
 logs/*.log
 logs/*.pkl
 logs/*.wav

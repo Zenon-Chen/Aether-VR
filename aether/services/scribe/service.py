@@ -46,12 +46,18 @@ class Block:
     created_at: float = field(default_factory=time.time)
     importance: Optional[Importance] = None
     summary: str = ""
+    references: int = 0
+
+    @property
+    def active_text(self) -> str:
+        return self.summary if self.importance is Importance.NORMAL and self.summary else self.content
 
     @property
     def tokens(self) -> int:
-        """粗估：中文约 1 字 1 token，英文约 4 字符 1 token"""
-        chinese = sum(1 for c in self.content if "\u4e00" <= c <= "\u9fff")
-        return chinese + (len(self.content) - chinese) // 4
+        """活动上下文的粗略 token 数；normal 只计算摘要。"""
+        text = self.active_text
+        chinese = sum(1 for c in text if "\u4e00" <= c <= "\u9fff")
+        return max(1, chinese + (len(text) - chinese) // 4)
 
 
 class ScribeService:
@@ -65,6 +71,7 @@ class ScribeService:
         self._blocks: list[Block] = []
         self._db: Optional[sqlite3.Connection] = None
         self._lock = asyncio.Lock()
+        self._persisted_count = 0
         self._evaluator: Optional[
             Callable[[list[dict[str, str]]], Awaitable[list[dict[str, str]]]]
         ] = None
@@ -146,24 +153,30 @@ class ScribeService:
         logger.debug("[Scribe] 批量标记 %d 块，保留 %d", len(batch), len(self._blocks))
 
     async def _enforce_limit(self) -> None:
-        """超过上限时先驱逐一般块，再驱逐最旧的重要块，全部落盘。"""
-        limit = self._config.context_limit_tokens
-        target = self._config.evict_target_tokens
-        if self.context_tokens <= limit:
+        """超过上限时先驱逐 normal，再按确定性价值分驱逐 important。"""
+        if self.context_tokens <= self._config.context_limit_tokens:
             return
+        normals = [b for b in self._blocks if b.importance is Importance.NORMAL]
+        importants = sorted(
+            (b for b in self._blocks if b.importance is Importance.IMPORTANT),
+            key=self._retention_score,
+        )
+        for block in normals + importants:
+            if self.context_tokens <= self._config.evict_target_tokens:
+                return
+            pointer = block.summary or _one_line(block.content)
+            await self.remember(block.content, f"evicted_{block.kind}", summary=pointer)
+            self._blocks.remove(block)
 
-        for importance in (Importance.NORMAL, Importance.IMPORTANT):
-            for block in list(self._blocks):
-                if self.context_tokens <= target:
-                    return
-                if block.importance is not importance:
-                    continue
-                await self.remember(
-                    block.content,
-                    f"evicted_{block.kind}",
-                    summary=block.summary,
-                )
-                self._blocks.remove(block)
+    def _retention_score(self, block: Block) -> float:
+        """高价值关键字、引用次数和近期性共同决定保留价值。"""
+        durable = sum(
+            1 for key in ("记住", "答应", "承诺", "名字", "喜欢", "讨厌")
+            if key in block.content
+        )
+        age_hours = max(0.0, time.time() - block.created_at) / 3600
+        recency = 1 / (1 + age_hours)
+        return durable * 10 + block.references * 3 + recency
 
     # ── 长期记忆 ───────────────────────────────────────────
 
@@ -189,6 +202,7 @@ class ScribeService:
             (now, kind, content, summary),
         )
         self._db.commit()
+        self._persisted_count += 1
 
     async def recall(self, query: str, max_tokens: int = 2000) -> str:
         """检索长期记忆（当前为关键词匹配，接入嵌入后替换）"""
@@ -219,9 +233,31 @@ class ScribeService:
                 if block.importance is Importance.IMPORTANT:
                     await self.remember(block.content, block.kind)
 
+    def render_active_context(self, max_tokens: int = 4000) -> str:
+        """渲染 pending 与已裁决活动块；normal 绝不暴露原文。"""
+        lines: list[str] = []
+        used = 0
+        for block in [*self._blocks, *self._pending]:
+            text = block.active_text
+            cost = block.tokens
+            if used + cost > max_tokens:
+                break
+            lines.append(f"[{block.kind}] {text}")
+            used += cost
+        return "\n".join(lines)
+
     @property
     def context_tokens(self) -> int:
-        return sum(b.tokens for b in self._blocks)
+        return sum(b.tokens for b in [*self._blocks, *self._pending])
+
+    @property
+    def metrics(self) -> dict[str, int]:
+        return {
+            "pending_blocks": len(self._pending),
+            "active_blocks": len(self._blocks),
+            "active_tokens": self.context_tokens,
+            "persisted_blocks": self._persisted_count,
+        }
 
 
 def _fit_recent(rows: list[tuple[str]], max_tokens: int) -> str:
