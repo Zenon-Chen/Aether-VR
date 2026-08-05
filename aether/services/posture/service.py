@@ -174,7 +174,8 @@ class PostureService:
         if not frames:
             raise RuntimeError("DART 返回空动作")
 
-        resampled = _resample(frames, fps, self._config.keepalive_fps)
+        scoped = _apply_scope(frames, self._current, full_body)
+        resampled = _resample(scoped, fps, self._config.keepalive_fps)
         await self._enqueue(resampled)
         await self._await_playback()
         return f"播放 {len(frames)} 帧（{len(resampled)/self._config.keepalive_fps:.1f}s）"
@@ -260,6 +261,17 @@ class PostureService:
 
 
 # ── 辅助 ───────────────────────────────────────────────────
+
+def _apply_scope(
+    frames: list[PostureFrame], current: PostureFrame, full_body: bool
+) -> list[PostureFrame]:
+    if full_body:
+        return frames
+    return [
+        PostureFrame(devices=frame.devices[:3] + current.devices[3:])
+        for frame in frames
+    ]
+
 
 def _with_repeat(prompt: str, duration_s: float) -> str:
     """DART 用 `动作*N` 表示重复次数；一个 primitive 约 0.5 秒"""

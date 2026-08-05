@@ -40,12 +40,20 @@ class PlanRejected(ValueError):
     """计划不合法，直接回绝 ER2"""
 
 
-def parse_tool_call(name: str, args: dict[str, Any], *, max_steps: int) -> Optional[Plan]:
+def parse_tool_call(
+    name: str,
+    args: dict[str, Any],
+    *,
+    max_steps: int,
+    full_body_actions: tuple[str, ...] = (),
+) -> Optional[Plan]:
     """把一次工具调用翻译为 Plan。ack / stop_all 返回 None 由上层特判。"""
     args = args or {}
 
     if name == "execute_plan":
-        return _parse_plan(args, max_steps=max_steps)
+        return _parse_plan(
+            args, max_steps=max_steps, full_body_actions=full_body_actions
+        )
 
     # 单工具调用视为单步计划
     if name == "speak":
@@ -70,7 +78,9 @@ def parse_tool_call(name: str, args: dict[str, Any], *, max_steps: int) -> Optio
     raise PlanRejected(f"未知工具: {name}")
 
 
-def _parse_plan(args: dict[str, Any], *, max_steps: int) -> Plan:
+def _parse_plan(
+    args: dict[str, Any], *, max_steps: int, full_body_actions: tuple[str, ...]
+) -> Plan:
     raw_steps = args.get("steps")
     if not isinstance(raw_steps, (list, tuple)) or not raw_steps:
         raise PlanRejected("execute_plan 缺少 steps")
@@ -90,10 +100,13 @@ def _parse_plan(args: dict[str, Any], *, max_steps: int) -> Plan:
         step_args = raw.get("args")
         if not isinstance(step_args, dict):
             step_args = {}
+        normalized = _normalize_args(action, step_args)
+        if action is ActionKind.PLAY_ACTION:
+            normalized["full_body"] = normalized["name"] in full_body_actions
         steps.append(PlanStep(
             seq=_as_int(raw.get("seq"), index),
             action=action,
-            args=_normalize_args(action, step_args),
+            args=normalized,
             parallel=bool(raw.get("parallel", False)),
         ))
 

@@ -135,6 +135,7 @@ class BrainService:
         facts_text: str,
         transcript: str = "",
         frame: Optional[VideoFrame] = None,
+        memories: str = "",
     ) -> Optional[BrainOutput]:
         """一轮观察。解析失败返回 None，由调用方沿用上轮建议。"""
         if not self.enabled:
@@ -143,6 +144,7 @@ class BrainService:
         parts: list = [
             f"—世界事实—\n{facts_text}",
             f"—最近对话—\n{transcript or '（无）'}",
+            f"—长期记忆—\n{memories or '（无）'}",
         ]
         if frame is not None:
             parts.append(types.Part.from_bytes(data=frame.jpeg, mime_type="image/jpeg"))

@@ -90,6 +90,7 @@ class AetherRuntime:
 
         self.cerebellum.set_tool_call_handler(self._on_tool_call)
         self.cerebellum.set_text_handler(self._on_text)
+        self.cerebellum.set_transcript_handler(self.add_transcript)
         await self.cerebellum.start()
 
         await self._refresh_health()
@@ -236,7 +237,10 @@ class AetherRuntime:
 
         try:
             plan = parse_tool_call(
-                name, args, max_steps=self.config.cerebellum.max_plan_steps
+                name,
+                args,
+                max_steps=self.config.cerebellum.max_plan_steps,
+                full_body_actions=tuple(self.config.avatar.full_body_actions),
             )
         except PlanRejected as exc:
             await self._respond(fc, {"status": "rejected", "reason": str(exc)})
@@ -319,10 +323,12 @@ class AetherRuntime:
             if not self.brain.enabled:
                 continue
             try:
+                memories = await self.scribe.recall_recent()
                 output = await self.brain.observe(
                     render_facts(self.state.facts),
                     "\n".join(self._transcript[-6:]),
                     self.capture.latest_frame(),
+                    memories,
                 )
                 if output is not None:
                     await self._absorb(output)
@@ -372,3 +378,4 @@ class AetherRuntime:
         self._transcript.append(line)
         if len(self._transcript) > 20:
             self._transcript = self._transcript[-20:]
+        asyncio.create_task(self.scribe.note("user", f"用户说：{line}"))

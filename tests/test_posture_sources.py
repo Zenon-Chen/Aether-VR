@@ -4,9 +4,9 @@ import asyncio
 import socket
 import time
 
-from aether.contracts.frame import PostureFrame
+from aether.contracts.frame import DevicePose, PostureFrame
 from aether.infra.config import DartConfig, PostureConfig
-from aether.services.posture.service import PostureMode, PostureService
+from aether.services.posture.service import PostureMode, PostureService, _apply_scope
 
 
 def _free_udp_port() -> int:
@@ -15,6 +15,18 @@ def _free_udp_port() -> int:
     port = sock.getsockname()[1]
     sock.close()
     return port
+
+
+def test_motion_scope_selects_three_or_six_generated_devices() -> None:
+    current = PostureFrame(tuple(DevicePose(x=float(i)) for i in range(6)))
+    generated = PostureFrame(tuple(DevicePose(x=float(i + 10)) for i in range(6)))
+
+    upper = _apply_scope([generated], current, full_body=False)[0]
+    full = _apply_scope([generated], current, full_body=True)[0]
+
+    assert upper.devices[:3] == generated.devices[:3]
+    assert upper.devices[3:] == current.devices[3:]
+    assert full == generated
 
 
 def test_freeze_blend_resume_keeps_stream_alive() -> None:

@@ -51,11 +51,15 @@ async def test_serial_when_channels_conflict():
 
 @pytest.mark.asyncio
 async def test_full_body_blocks_movement():
-    """DART full_body 占据上下半身与移动通道"""
-    step = PlanStep(1, ActionKind.GENERATE_MOTION, {"prompt": "dance", "scope": "full_body"})
+    """DART 与预录 full_body 都占据上下半身与移动通道"""
     from aether.contracts.plan import Channel
-    assert Channel.MOVEMENT in step.channels()
-    assert Channel.LOWER_BODY in step.channels()
+
+    motion = PlanStep(1, ActionKind.GENERATE_MOTION, {"scope": "full_body"})
+    action = PlanStep(2, ActionKind.PLAY_ACTION, {"name": "bow", "full_body": True})
+    for step in (motion, action):
+        assert step.channels() == frozenset({
+            Channel.UPPER_BODY, Channel.LOWER_BODY, Channel.MOVEMENT,
+        })
 
 
 @pytest.mark.asyncio

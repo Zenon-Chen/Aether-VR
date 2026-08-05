@@ -64,7 +64,7 @@ class PlanStep:
         if self.action is ActionKind.GENERATE_MOTION and scope == "full_body":
             return FULL_BODY_CHANNELS
         if self.action is ActionKind.PLAY_ACTION and self.args.get("full_body"):
-            return frozenset({Channel.UPPER_BODY, Channel.LOWER_BODY})
+            return FULL_BODY_CHANNELS
         return CHANNEL_USAGE.get(self.action, frozenset())
 
 

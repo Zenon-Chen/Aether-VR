@@ -27,6 +27,7 @@ except Exception:  # pragma: no cover
 
 ToolCallHandler = Callable[[Any], Awaitable[None]]
 TextHandler = Callable[[str], Awaitable[None]]
+TranscriptHandler = Callable[[str], None]
 
 
 class CerebellumService:
@@ -51,6 +52,8 @@ class CerebellumService:
         self._connected = False
         self._on_tool_call: Optional[ToolCallHandler] = None
         self._on_text: Optional[TextHandler] = None
+        self._on_transcript: Optional[TranscriptHandler] = None
+        self._input_transcript_parts: list[str] = []
         self._send_lock = asyncio.Lock()
 
     # ── 注入 ───────────────────────────────────────────────
@@ -60,6 +63,9 @@ class CerebellumService:
 
     def set_text_handler(self, handler: TextHandler) -> None:
         self._on_text = handler
+
+    def set_transcript_handler(self, handler: TranscriptHandler) -> None:
+        self._on_transcript = handler
 
     # ── 生命周期 ───────────────────────────────────────────
 
@@ -88,6 +94,7 @@ class CerebellumService:
             "response_modalities": self._config.response_modalities,
             "system_instruction": build_system_prompt(self._actions, self._directions),
             "tools": build_tool_declarations(),
+            "input_audio_transcription": types.AudioTranscriptionConfig(),
             "context_window_compression": types.ContextWindowCompressionConfig(
                 trigger_tokens=self._config.compression_trigger_tokens,
                 sliding_window=types.SlidingWindow(
@@ -147,7 +154,7 @@ class CerebellumService:
         async with self._send_lock:
             try:
                 await self._session.send_realtime_input(
-                    image=types.Blob(data=frame.jpeg, mime_type="image/jpeg")
+                    video=types.Blob(data=frame.jpeg, mime_type="image/jpeg")
                 )
             except Exception as exc:
                 logger.warning("[Cerebellum] 画面发送失败：%s", exc)
@@ -193,6 +200,17 @@ class CerebellumService:
     async def _handle(self, chunk) -> None:
         server_content = getattr(chunk, "server_content", None)
         if server_content is not None:
+            transcription = getattr(server_content, "input_transcription", None)
+            if transcription is not None:
+                text = str(getattr(transcription, "text", "") or "").strip()
+                if text:
+                    self._input_transcript_parts.append(text)
+                if getattr(transcription, "finished", False):
+                    line = " ".join(self._input_transcript_parts).strip()
+                    self._input_transcript_parts.clear()
+                    if line and self._on_transcript is not None:
+                        self._on_transcript(line)
+
             if getattr(server_content, "turn_complete", False):
                 self._generating = False
             elif getattr(server_content, "model_turn", None) is not None:

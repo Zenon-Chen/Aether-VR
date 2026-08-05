@@ -22,7 +22,7 @@ cerebellum:
 
 # ── 大脑：人格与观察（阶段 2）────────────────
 brain:
-  enabled: false
+  enabled: true
   model: "gemini-3.5-flash-lite"
   interval_s: 1.5
   max_output_tokens: 512
@@ -31,9 +31,11 @@ brain:
 
 # ── 书记官：长期记忆（阶段 2）────────────────
 scribe:
-  enabled: false
+  enabled: true
   batch_size: 10                  # 积攒 N 块再批量标记重要性
   db_path: "data/memory.sqlite3"
+  context_limit_tokens: 120000
+  evict_target_tokens: 80000
 
 # ── 语音 ──────────────────────────────────────
 speech:
@@ -113,16 +115,3 @@ log:
   file: "logs/aether.log"
   max_bytes: 10000000
   backup_count: 7
-brain:
-  enabled: true
-  model: "gemini-3.5-flash-lite"
-  interval_s: 1.5
-  max_output_tokens: 512
-  context_limit_tokens: 500000
-  evict_target_tokens: 350000
-scribe:
-  enabled: true
-  batch_size: 10
-  db_path: "data/memory.sqlite3"
-  context_limit_tokens: 120000
-  evict_target_tokens: 80000

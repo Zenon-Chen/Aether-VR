@@ -80,6 +80,16 @@ def test_parse_execute_plan():
     assert plan.steps[1].parallel is True
 
 
+def test_full_body_action_is_marked_before_scheduling():
+    plan = parse_tool_call("execute_plan", {"steps": [
+        {"action": "play_action", "args": {"name": "bow"}},
+        {"action": "play_action", "args": {"name": "wave"}},
+    ]}, max_steps=6, full_body_actions=("bow", "sit", "stand"))
+
+    assert plan.steps[0].args["full_body"] is True
+    assert plan.steps[1].args["full_body"] is False
+
+
 def test_text_ref_maps_to_use_suggested():
     """ER2 用 text_ref 引用建议台词时应转成 use_suggested"""
     plan = parse_tool_call("execute_plan", {"steps": [

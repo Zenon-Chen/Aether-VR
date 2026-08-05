@@ -191,15 +191,16 @@ class ScribeService:
             "ORDER BY created_at DESC LIMIT 20",
             (f"%{query}%",),
         )
-        out: list[str] = []
-        used = 0
-        for (content,) in cursor.fetchall():
-            cost = len(content) // 2
-            if used + cost > max_tokens:
-                break
-            out.append(content)
-            used += cost
-        return "\n".join(out)
+        return _fit_recent(cursor.fetchall(), max_tokens)
+
+    async def recall_recent(self, max_tokens: int = 2000) -> str:
+        """读取 SQLite 中最近的长期记忆，供大脑观察循环回流。"""
+        if self._db is None:
+            return ""
+        cursor = self._db.execute(
+            "SELECT content FROM memory ORDER BY created_at DESC LIMIT 20"
+        )
+        return _fit_recent(cursor.fetchall(), max_tokens)
 
     async def flush(self) -> None:
         """会话结束时把待处理块落盘"""
@@ -213,6 +214,18 @@ class ScribeService:
     @property
     def context_tokens(self) -> int:
         return sum(b.tokens for b in self._blocks)
+
+
+def _fit_recent(rows: list[tuple[str]], max_tokens: int) -> str:
+    out: list[str] = []
+    used = 0
+    for (content,) in rows:
+        cost = max(1, len(content) // 2)
+        if used + cost > max_tokens:
+            break
+        out.append(content)
+        used += cost
+    return "\n".join(out)
 
 
 def _heuristic_importance(block: Block) -> Importance:
