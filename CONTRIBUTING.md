@@ -68,6 +68,34 @@ $env:GEMINI_API_KEY = "your-dev-key"
 
 ## 测试
 
+### 一键 dev 本机验证（推荐）
+
+从仓库根目录运行：
+
+```powershell
+# 已安装依赖时：测试、编译检查、核心 UDP 冒烟、Motion Provider mock 测试
+powershell -ExecutionPolicy Bypass -File .\scripts\dev_test.ps1
+
+# 首次使用或依赖可能不完整时
+powershell -ExecutionPolicy Bypass -File .\scripts\dev_test.ps1 -Install
+
+# 额外构建 Motion Provider wheel/sdist
+powershell -ExecutionPolicy Bypass -File .\scripts\dev_test.ps1 -BuildProvider
+
+# 只运行无硬件的 Python 检查，不执行 UDP 冒烟
+powershell -ExecutionPolicy Bypass -File .\scripts\dev_test.ps1 -SkipSmoke
+```
+
+该入口只使用本地 Python、mock 和 loopback UDP，不启动 Gemini、WSL、SteamVR、VRChat 或真实音频设备。成功输出 `PASS: local dev checks completed` 后，才进入真实硬件测试。日志和测试数据库仍写入已被 `.gitignore` 忽略的 `logs/`、`data/`。
+
+底层 Python 入口也可以直接运行：
+
+```powershell
+python scripts/dev_verify.py --full --smoke --build-provider
+```
+
+### 单独测试
+
 ```bash
 # 运行全部测试
 python -m pytest tests/ -v
