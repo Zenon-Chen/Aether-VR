@@ -8,17 +8,17 @@
 
 ### 1. 基础环境
 
-```bash
+```powershell
 # Windows 端
 python -m venv .venv
-.venv\Scripts\activate
+.\.venv\Scripts\activate
 pip install -r requirements.txt
 pip install pytest pytest-asyncio
 ```
 
 ### 2. WSL2 DART 开发（可选）
 
-动作生成模块部署在 WSL2，需要独立的 ROCm 环境：
+外部动作生成服务部署在 WSL2（默认监听 `127.0.0.1:8900`）：
 
 ```bash
 cd /root/DART
@@ -28,41 +28,44 @@ pip install -r requirements_dart.txt
 
 ### 3. 环境变量
 
-```bash
+```powershell
 # 开发时使用测试 Key 或 mock，不要将真实 Key 提交到代码中
 $env:GEMINI_API_KEY = "your-dev-key"
 ```
 
 ---
 
-## 代码规范
+## 架构分层与代码规范（硬约束）
 
-### Python 风格
+### 单向依赖原则
 
-- 遵循 **PEP 8**，行宽 100 字符
-- 使用 **类型提示**（Type Hints）标注函数签名
-- 异步函数使用 `async/await`，同步回调需注明原因
-- 模块顶层添加 docstring 说明职责
+仓库严格执行 `AGENTS.md` 规定的单向依赖边界（由 `tests/test_runtime_modular_wiring.py` 进行 AST 静态守卫）：
 
-### 命名约定
+```text
+contracts/  ← 零依赖公共数据契约
+core/       ← 仅依赖 contracts；不知道任何具体 service
+services/   ← 仅依赖 contracts + infra + services/ports.py；严禁跨服务相互 import
+runtime/    ← 唯一组合根（agent / motion_wiring / executors / perception_gate / coordinator）
+```
+
+### Python 风格与命名约定
+
+- 遵循 **PEP 8**，行宽 100 字符，函数签名标注类型提示（Type Hints）。
+- 异步函数使用 `async/await`；阻塞文件/数据库/音频 I/O 不得直接卡死主事件循环。
+- 新增配置项统一在 `aether/infra/config.py` 定义，**必须提供安全默认值**，确保空配置可启动。
 
 | 类型 | 风格 | 示例 |
 |------|------|------|
-| 类名 | PascalCase | `AetherAgent`, `TTSEngine` |
-| 函数/方法 | snake_case | `send_audio`, `handle_tool_call` |
-| 常量 | UPPER_SNAKE_CASE | `VALID_EMOTIONS`, `TEXT_MAX_LENGTH` |
-| 私有属性 | 前缀 `_` | `_running`, `_exit_stack` |
-
-### 模块结构
-
-- 每个子包（`er2/`, `speech/`, `motion/`, `context/`, `io/`）维护独立的 `__init__.py`
-- 公共接口通过 `__all__` 导出
-- 配置类统一在 `config.py` 中定义
+| 类名 | PascalCase | `AetherRuntime`, `BodyExecutorSuite`, `SpeechService` |
+| 端口协议 | PascalCase + `Port` | `SpeechPort`, `MotionProviderPort`, `VisionPort` |
+| 函数/方法 | snake_case | `send_audio`, `parse_tool_call`, `approach_target` |
+| 常量 | UPPER_SNAKE_CASE | `STOP_KEYWORDS`, `DEFAULT_STEP_TIMEOUT` |
+| 私有属性 | 前缀 `_` | `_running`, `_bg_tasks` |
 
 ### 日志
 
-- 使用标准 `logging` 模块，logger 名称格式：`aether.<module>`
-- 日志前缀格式：`[模块名]`，例如 `[ER2]`, `[TTS]`, `[DART]`
+- 使用标准 `logging` 模块，logger 名称格式：`aether.<layer>.<module>`（并在 `aether/infra/logging_setup.py` 的 `MODULE_COLORS` 登记模块颜色）。
+- 日志前缀格式：`[模块名]`，例如 `[Cerebellum]`, `[Speech]`, `[Sched]`, `[Stop]`。
 
 ---
 
@@ -73,67 +76,43 @@ $env:GEMINI_API_KEY = "your-dev-key"
 从仓库根目录运行：
 
 ```powershell
-# 已安装依赖时：测试、编译检查、核心 UDP 冒烟、Motion Provider mock 测试
+# 已安装依赖时：全量单测、分层守卫、Unity 资产契约、编译检查、UDP 冒烟、Motion Provider 测试
 powershell -ExecutionPolicy Bypass -File .\scripts\dev_test.ps1
 
-# 首次使用或依赖可能不完整时
-powershell -ExecutionPolicy Bypass -File .\scripts\dev_test.ps1 -Install
-
-# 额外构建 Motion Provider wheel/sdist
-powershell -ExecutionPolicy Bypass -File .\scripts\dev_test.ps1 -BuildProvider
-
-# 只运行无硬件的 Python 检查，不执行 UDP 冒烟
-powershell -ExecutionPolicy Bypass -File .\scripts\dev_test.ps1 -SkipSmoke
+# 底层 Python 入口
+python scripts/dev_verify.py --smoke
 ```
 
-该入口只使用本地 Python、mock 和 loopback UDP，不启动 Gemini、WSL、SteamVR、VRChat 或真实音频设备。成功输出 `PASS: local dev checks completed` 后，才进入真实硬件测试。日志和测试数据库仍写入已被 `.gitignore` 忽略的 `logs/`、`data/`。
+该入口只使用本地 Python、mock 和 loopback UDP，不启动 Gemini、WSL、SteamVR、VRChat 或真实音频设备。
 
-底层 Python 入口也可以直接运行：
+### VRChat 可见动作验收（真实运行）
+
+先手动进入 VRChat 私人安全世界并载入 Aether Avatar，然后在仓库根目录运行：
 
 ```powershell
-python scripts/dev_verify.py --full --smoke --build-provider
+# 仅检查配置和动作序列，不发送 OSC
+python -m aether.runtime.vrchat_test --dry-run
+
+# 真实发送 OSC 驱动表情与 9 个预录动作
+powershell -ExecutionPolicy Bypass -File .\scripts\vrchat_visible_test.ps1
 ```
 
 ### 单独测试
 
-```bash
+```powershell
 # 运行全部测试
 python -m pytest tests/ -v
 
-# 运行单个测试文件
-python -m pytest tests/test_config.py -v
+# 运行架构与运行期接线测试
+python -m pytest tests/test_runtime_modular_wiring.py -v
 
-# 带覆盖率报告
-python -m pytest tests/ -v --cov=aether
+# 运行 Unity Avatar 生成资产静态契约测试
+python -m pytest tests/test_unity_avatar_assets.py -v
 ```
 
 **测试原则：**
-- 所有外部依赖（API、网络、硬件）必须 mock
-- 测试文件命名：`test_<module>.py`
-- 异步测试使用 `@pytest.mark.asyncio` 装饰器
-
----
-
-## PR 流程
-
-1. **Fork** 项目并创建功能分支：
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **编写代码与测试**，确保所有测试通过：
-   ```bash
-   python -m pytest tests/ -v
-   ```
-
-3. **提交变更**，commit message 使用约定式前缀：
-   - `feat:` 新功能
-   - `fix:` Bug 修复
-   - `refactor:` 重构
-   - `test:` 测试相关
-   - `docs:` 文档更新
-
-4. **发起 Pull Request**，描述改动内容和测试情况
+- 所有外部依赖（云端 API、网络、硬件、子进程）在单测中必须使用 mock 或本地测试桩；
+- 后台 `asyncio.create_task` 必须纳入生命周期集合并在 `stop()` 时取消等待，严禁悬空裸任务。
 
 ---
 
@@ -141,8 +120,12 @@ python -m pytest tests/ -v --cov=aether
 
 | 路径 | 说明 |
 |------|------|
-| `aether/` | 主程序包，Windows 端运行 |
-| `dart/` | DART 动作生成服务，WSL2 端运行 |
-| `tests/` | 单元测试（pytest） |
+| `aether/contracts/` | 跨模块不可变数据契约与线格式 |
+| `aether/core/` | 状态库、双预算通道锁调度器、心跳闸门与紧急停止 |
+| `aether/services/` | 各独立输入/认知/输出服务与 `ports.py` 协议定义 |
+| `aether/runtime/` | 运行时组合根、四大协作者模块、CLI 与冒烟/验收脚本 |
+| `motion-provider/` | 独立可打包的动作生成 HTTP sidecar 包 |
+| `avatar-project/` | Unity 2022.3 + VRChat Avatars 3.0 角色工程与自动生成脚本 |
+| `dart-steamvr-bridge/` | C++ SteamVR 虚拟六设备 OpenVR 驱动 |
+| `tests/` | pytest 自动化测试套件 |
 | `config.yaml` | 默认配置，不提交敏感信息 |
-| `logs/` | 运行时日志（gitignore） |

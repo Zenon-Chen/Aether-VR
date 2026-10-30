@@ -14,13 +14,16 @@ contracts，不直接依赖其他 service 的实现。这是模块可独立检�
 
 from .frame import DeviceSlot, DevicePose, PostureFrame, SMPL_DEVICE_JOINTS
 from .plan import Channel, ActionKind, PlanStep, Plan, StepResult, PlanResult
-from .facts import ChannelState, ActivePlan, ServiceHealth, WorldFacts
+from .facts import (
+    ChannelState, ActivePlan, ServiceHealth, WorldFacts, normalize_health_status,
+)
 from .observation import Observation, BrainOutput
 from .perception import AudioChunk, VideoFrame
 from .motion import (
     CanonicalMotion, MotionCapabilities, MotionErrorCode, MotionHealthReport,
     MotionProviderError, MotionRequest,
 )
+from .vision import TargetObservation, VisionStatus
 
 __all__ = [
     # frame
@@ -28,7 +31,7 @@ __all__ = [
     # plan
     "Channel", "ActionKind", "PlanStep", "Plan", "StepResult", "PlanResult",
     # facts
-    "ChannelState", "ActivePlan", "ServiceHealth", "WorldFacts",
+    "ChannelState", "ActivePlan", "ServiceHealth", "WorldFacts", "normalize_health_status",
     # observation
     "Observation", "BrainOutput",
     # perception
@@ -36,4 +39,6 @@ __all__ = [
     # motion
     "MotionRequest", "CanonicalMotion", "MotionCapabilities", "MotionHealthReport",
     "MotionErrorCode", "MotionProviderError",
+    # vision
+    "TargetObservation", "VisionStatus",
 ]

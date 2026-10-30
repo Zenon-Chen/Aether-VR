@@ -41,12 +41,4 @@ class VisionStatus:
     degraded: bool = False
 
 
-class VisionTrackerPort:
-    """可替换的单帧 detector；不得依赖 capture 或 locomotion。"""
-    degraded: bool = False
-
-    async def detect(self, frame) -> tuple[TargetObservation, ...]:
-        raise NotImplementedError
-
-
-__all__ = ["TargetObservation", "VisionStatus", "VisionTrackerPort"]
+__all__ = ["TargetObservation", "VisionStatus"]

@@ -26,6 +26,8 @@ MODULE_COLORS: dict[str, str] = {
     "aether.services.posture": "\033[38;5;46m",     # 绿 — 姿态
     "aether.services.avatar": "\033[38;5;120m",     # 浅绿 — 化身
     "aether.services.locomotion": "\033[38;5;123m", # 浅青 — 移动
+    "aether.services.vision": "\033[38;5;117m",     # 天蓝 — 视觉伺服
+    "aether.services.motion": "\033[38;5;84m",      # 翠绿 — 动作边车
     "aether.services.scribe": "\033[38;5;180m",     # 棕 — 记忆
     "aether.runtime": "\033[38;5;255m",             # 白 — 装配
 }

@@ -250,23 +250,23 @@ MonoBehaviour:
   lipSyncJawClosed: {x: 0, y: 0, z: 0, w: 1}
   lipSyncJawOpen: {x: 0, y: 0, z: 0, w: 1}
   VisemeSkinnedMesh: {fileID: 2000990535}
-  MouthOpenBlendShapeName: Facial_Blends.Jaw_Down
+  MouthOpenBlendShapeName: 
   VisemeBlendShapes:
-  - 
-  - vrc.v_ou
-  - vrc.v_ou
-  - vrc.blink_left
-  - vrc.lowerlid_left
-  - vrc.blink_left
-  - vrc.blink_left
-  - vrc.v_ou
+  - vrc.v_sil
+  - vrc.v_pp
+  - vrc.v_ff
+  - vrc.v_th
+  - vrc.v_dd
+  - vrc.v_kk
+  - vrc.v_ch
+  - vrc.v_ss
+  - vrc.v_nn
+  - vrc.v_rr
   - vrc.v_aa
-  - vrc.blink_left
-  - vrc.v_aa
-  - vrc.v_aa
-  - vrc.lowerlid_left
+  - vrc.v_ee
+  - vrc.v_ih
+  - vrc.v_oh
   - vrc.v_ou
-  - vrc.v_aa
   unityVersion: 2022.3.22f1c1
   portraitCameraPositionOffset: {x: 0, y: 0, z: 0}
   portraitCameraRotationOffset: {x: 0, y: 1, z: 0, w: -0.00000004371139}
@@ -364,9 +364,10 @@ MonoBehaviour:
     isDefault: 1
   - isEnabled: 1
     type: 4
-    animatorController: {fileID: 0}
+    animatorController: {fileID: 9100000, guid: d436cd9dbd142424b85ac925c4a4d5d5,
+      type: 2}
     mask: {fileID: 0}
-    isDefault: 1
+    isDefault: 0
   - isEnabled: 1
     type: 5
     animatorController: {fileID: 9100000, guid: 860da5b0e8b8d834699a94c062cb51d8,

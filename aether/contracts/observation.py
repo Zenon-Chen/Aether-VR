@@ -7,9 +7,12 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 from dataclasses import dataclass, field
 from typing import Any, Optional
+
+_brain_output_counter = itertools.count(1)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +44,9 @@ class BrainOutput:
     wake_er2: bool = False
     memory_write: tuple[str, ...] = ()
     raw: Optional[dict[str, Any]] = field(default=None, repr=False)
+    output_id: int = field(
+        default_factory=lambda: next(_brain_output_counter), compare=False
+    )
 
     @classmethod
     def parse(cls, text: str) -> Optional["BrainOutput"]:

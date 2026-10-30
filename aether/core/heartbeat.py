@@ -61,6 +61,7 @@ class HeartbeatAssembler:
         self._counter = itertools.count(1)
         self._last_sent_at = 0.0
         self._last_digest = ""
+        self._last_woken_output_id: Optional[int] = None
 
     def status_only(self, facts: WorldFacts, note: str) -> str:
         """执行进度 / 失败详情的即时状态注入"""
@@ -87,7 +88,12 @@ class HeartbeatAssembler:
         if er2_generating:
             return HeartbeatDecision(Gate.ER2_GENERATING)
 
-        wake = force or bool(brain and brain.wake_er2)
+        brain_wake = bool(
+            brain is not None
+            and brain.wake_er2
+            and brain.output_id != self._last_woken_output_id
+        )
+        wake = force or brain_wake
         interval = BUSY_INTERVAL_S if facts.active_plan is not None else IDLE_INTERVAL_S
         if not wake and (now - self._last_sent_at) < interval:
             return HeartbeatDecision(Gate.TOO_SOON)
@@ -100,6 +106,8 @@ class HeartbeatAssembler:
 
         self._last_sent_at = now
         self._last_digest = digest
+        if brain_wake and brain is not None:
+            self._last_woken_output_id = brain.output_id
         return HeartbeatDecision(Gate.ALLOW, text)
 
     # ── 内部 ───────────────────────────────────────────────

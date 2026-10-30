@@ -21,7 +21,7 @@ from typing import Awaitable, Callable, Optional
 from ..contracts.facts import ActivePlan
 from ..contracts.plan import (
     ActionKind, Channel, Plan, PlanResult, PlanStep, StepResult, StepStatus,
-    estimated_plan_seconds,
+    estimated_plan_seconds, estimated_step_seconds,
 )
 from .state_store import StateStore
 
@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 
 #: 执行器签名：async (step) -> 可选的结果描述；抛异常即失败
 Executor = Callable[[PlanStep], Awaitable[Optional[str]]]
+IOAllowanceFn = Callable[[Plan], float]
 
 #: 单步默认超时（秒）
 DEFAULT_STEP_TIMEOUT = 12.0
@@ -50,10 +51,18 @@ class Scheduler:
     """
 
     def __init__(
-        self, state: StateStore, on_plan_done=None, max_plan_seconds: float = 5.0
+        self,
+        state: StateStore,
+        on_plan_done=None,
+        max_plan_seconds: float = 5.0,
+        *,
+        io_allowance_fn: Optional[IOAllowanceFn] = None,
+        budget_exempt_actions: frozenset[ActionKind] = frozenset({ActionKind.APPROACH}),
     ) -> None:
         self._state = state
         self._max_plan_seconds = float(max_plan_seconds)
+        self._io_allowance_fn = io_allowance_fn
+        self._budget_exempt_actions = budget_exempt_actions
         self._executors: dict[ActionKind, Executor] = {}
         self._channel_locks: dict[Channel, asyncio.Lock] = {
             ch: asyncio.Lock() for ch in Channel
@@ -62,6 +71,11 @@ class Scheduler:
         self._current_plan_id: Optional[str] = None
         self._run_lock = asyncio.Lock()
         self._on_plan_done = on_plan_done
+
+    def _is_budget_exempt(self, plan: Plan) -> bool:
+        return bool(plan.steps) and all(
+            step.action in self._budget_exempt_actions for step in plan.steps
+        )
 
     # ── 注册 ───────────────────────────────────────────────
 
@@ -80,7 +94,8 @@ class Scheduler:
             estimated = estimated_plan_seconds(plan)
         except ValueError as exc:
             return PlanResult(plan.plan_id, StepStatus.FAILED, detail=f"计划时间参数无效: {exc}")
-        if estimated > self._max_plan_seconds:
+        exempt = self._is_budget_exempt(plan)
+        if not exempt and estimated > self._max_plan_seconds:
             return PlanResult(
                 plan.plan_id, StepStatus.FAILED,
                 detail=f"计划预计 {estimated:.2f}s，超过 {self._max_plan_seconds:.2f}s 预算",
@@ -94,8 +109,16 @@ class Scheduler:
             self._current = task
             self._current_plan_id = plan.plan_id
 
+        base_deadline = estimated if exempt else self._max_plan_seconds
+        io_allowance = (
+            max(0.0, float(self._io_allowance_fn(plan)))
+            if self._io_allowance_fn is not None
+            else 0.0
+        )
+        deadline_s = base_deadline + io_allowance
+
         try:
-            async with asyncio.timeout(self._max_plan_seconds):
+            async with asyncio.timeout(deadline_s):
                 return await task
         except TimeoutError:
             task.cancel()
@@ -103,7 +126,7 @@ class Scheduler:
             await self._state.release_all_channels()
             result = PlanResult(
                 plan.plan_id, StepStatus.FAILED,
-                detail=f"计划执行超过 {self._max_plan_seconds:.2f}s 墙钟期限",
+                detail=f"计划执行超过 {deadline_s:.2f}s 墙钟期限",
             )
             await self._state.record_result(result.summary())
             if self._on_plan_done is not None:
@@ -250,10 +273,15 @@ class Scheduler:
                 await self._channel_locks[ch].acquire()
                 acquired.append(ch)
 
-            duration = _estimated_duration(step)
+            duration = estimated_step_seconds(step)
             await self._state.acquire_channels(channels, holder, duration)
 
-            timeout = float(step.args.get("timeout", DEFAULT_STEP_TIMEOUT))
+            step_allowance = (
+                max(0.0, float(self._io_allowance_fn(Plan(steps=(step,), plan_id=plan_id))))
+                if self._io_allowance_fn is not None and "timeout" not in step.args
+                else 0.0
+            )
+            timeout = float(step.args.get("timeout", DEFAULT_STEP_TIMEOUT)) + step_allowance
             detail = await self._execute_with_retry(executor, step, timeout)
             elapsed = time.monotonic() - started
             logger.info("[Sched] %s %s 完成（%.2fs）", holder, step.action.value, elapsed)
@@ -287,18 +315,3 @@ class Scheduler:
 
 def _has_failure(results: list[StepResult]) -> bool:
     return any(r.status is StepStatus.FAILED for r in results)
-
-
-def _estimated_duration(step: PlanStep) -> float:
-    """用于事实登记的预计占用时长；执行器的真实时长以实际释放为准"""
-    for key in ("duration_s", "duration"):
-        value = step.args.get(key)
-        if value is not None:
-            try:
-                return float(value)
-            except (TypeError, ValueError):
-                pass
-    if step.action is ActionKind.SPEAK:
-        text = str(step.args.get("text", ""))
-        return max(1.0, len(text) / 5.0)
-    return 2.0

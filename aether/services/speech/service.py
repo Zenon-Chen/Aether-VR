@@ -124,21 +124,25 @@ class SpeechService:
             logger.info("[Speech] 说：%s（%d 段）", clean[:40], len(segments))
 
             total = 0.0
-            for segment in segments:
-                if self._stop_flag.is_set():
-                    logger.info("[Speech] 被打断，剩余段落丢弃")
-                    break
-                pcm = await self._synthesize(segment)
-                using_fallback = pcm is None
-                if using_fallback:
-                    pcm = self._fallback
-                if pcm is None:
-                    raise SpeechUnavailableError("TTS 失败且 fallback WAV 不可用")
-                played = await self._play(pcm)
-                if played <= 0.0:
-                    source = "fallback WAV" if using_fallback else "TTS 音频"
-                    raise SpeechUnavailableError(f"{source} 播放失败")
-                total += played
+            try:
+                for segment in segments:
+                    if self._stop_flag.is_set():
+                        logger.info("[Speech] 被打断，剩余段落丢弃")
+                        break
+                    pcm = await self._synthesize(segment)
+                    using_fallback = pcm is None
+                    if using_fallback:
+                        pcm = self._fallback
+                    if pcm is None:
+                        raise SpeechUnavailableError("TTS 失败且 fallback WAV 不可用")
+                    played = await self._play(pcm)
+                    if played <= 0.0:
+                        source = "fallback WAV" if using_fallback else "TTS 音频"
+                        raise SpeechUnavailableError(f"{source} 播放失败")
+                    total += played
+            except asyncio.CancelledError:
+                await self.halt()
+                raise
 
             if not self._stop_flag.is_set() and total <= 0.0:
                 raise SpeechUnavailableError("TTS 未产生可播放音频")
@@ -216,11 +220,20 @@ class SpeechService:
             return 0.0
         rate = self._config.output_sample_rate
         duration = len(pcm) / (rate * 2)
+        loop = asyncio.get_running_loop()
+        samples = np.frombuffer(pcm, dtype=np.int16)
+        play_future = loop.run_in_executor(
+            None,
+            lambda: sd.play(
+                samples, samplerate=rate, device=self._device_index, blocking=True
+            ),
+        )
         try:
-            samples = np.frombuffer(pcm, dtype=np.int16)
-            await asyncio.to_thread(
-                sd.play, samples, samplerate=rate, device=self._device_index, blocking=True
-            )
+            await play_future
+        except asyncio.CancelledError:
+            await self.halt()
+            await asyncio.gather(play_future, return_exceptions=True)
+            raise
         except Exception as exc:
             self._healthy = False
             logger.error("[Speech] 播放失败：%s", exc)

@@ -74,7 +74,10 @@ async def run_cli(runtime) -> None:
                 result = await runtime.approach_target(argument or "person")
                 print(f"视觉伺服停止：{result.reason}（{result.steps} 步）")
             elif command == "/idle":
-                await runtime.posture.go_idle()
+                if hasattr(runtime, "go_idle"):
+                    await runtime.go_idle()
+                else:
+                    await runtime.posture.go_idle()
             elif command == "/plan":
                 await runtime.scheduler.submit(Plan(steps=(
                     PlanStep(1, ActionKind.SPEAK, {"text": "你好呀，我在这边！"}),

@@ -56,6 +56,21 @@ class ServiceHealth:
         )
 
 
+def normalize_health_status(value: object) -> str:
+    """将各服务/探针异构返回值（bool / str / MotionHealthReport）归一化为标准状态字符串。"""
+    if value is True:
+        return "ok"
+    if value is False:
+        return "offline"
+    healthy = getattr(value, "healthy", None)
+    if isinstance(healthy, bool):
+        return "ok" if healthy else "degraded"
+    if isinstance(value, str):
+        cleaned = value.strip()
+        return cleaned if cleaned else "unknown"
+    return "unknown"
+
+
 @dataclass(frozen=True, slots=True)
 class WorldFacts:
     """权威事实快照 —— 不可变，由 StateStore 原子替换"""

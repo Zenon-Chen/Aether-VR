@@ -47,22 +47,30 @@ def parse_tool_call(
     max_steps: int,
     max_seconds: float = 5.0,
     full_body_actions: tuple[str, ...] = (),
+    suggested_reply: str = "",
 ) -> Optional[Plan]:
     """把一次工具调用翻译为 Plan。ack / stop_all 返回 None 由上层特判。"""
     args = args or {}
 
     if name == "execute_plan":
         plan = _parse_plan(
-            args, max_steps=max_steps, full_body_actions=full_body_actions
+            args,
+            max_steps=max_steps,
+            full_body_actions=full_body_actions,
+            suggested_reply=suggested_reply,
         )
         return _validate_budget(plan, max_seconds)
 
     # 单工具调用视为单步计划，同样必须通过总时长预算。
     if name == "speak":
-        plan = _single(ActionKind.SPEAK, {
+        speak_args = _normalize_args(ActionKind.SPEAK, {
             "text": str(args.get("text", "")),
             "use_suggested": bool(args.get("use_suggested", False)),
+            "text_ref": args.get("text_ref"),
         })
+        if speak_args.get("use_suggested") and suggested_reply:
+            speak_args["suggested_reply"] = suggested_reply
+        plan = Plan(steps=(PlanStep(1, ActionKind.SPEAK, speak_args),))
     elif name == "move":
         plan = _single(ActionKind.MOVE, {
             "direction": str(args.get("direction", "forward")),
@@ -70,12 +78,23 @@ def parse_tool_call(
         })
     elif name in ("play_action", "action"):
         action_name = str(args.get("name") or args.get("action") or "").strip()
+        if not action_name:
+            raise PlanRejected("play_action 缺少动作名称")
         normalized = _normalize_args(ActionKind.PLAY_ACTION, {"name": action_name})
         normalized["full_body"] = action_name in full_body_actions
-        plan = _single(ActionKind.PLAY_ACTION, normalized)
+        plan = Plan(steps=(PlanStep(1, ActionKind.PLAY_ACTION, normalized),))
+    elif name in ("expression", "set_expression"):
+        expr_name = str(args.get("name") or args.get("expression") or "").strip()
+        if not expr_name:
+            raise PlanRejected("expression 缺少表情名称")
+        normalized = _normalize_args(ActionKind.EXPRESSION, {"name": expr_name})
+        plan = Plan(steps=(PlanStep(1, ActionKind.EXPRESSION, normalized),))
     elif name == "generate_motion":
+        prompt = str(args.get("prompt", "") or "").strip()
+        if not prompt:
+            raise PlanRejected("generate_motion 缺少动作描述 prompt")
         plan = _single(ActionKind.GENERATE_MOTION, {
-            "prompt": str(args.get("prompt", "")),
+            "prompt": prompt,
             "duration_s": _as_float(args.get("duration_s"), 2.0, strict=True),
             "scope": str(args.get("scope", "upper_body")),
         })
@@ -87,7 +106,11 @@ def parse_tool_call(
 
 
 def _parse_plan(
-    args: dict[str, Any], *, max_steps: int, full_body_actions: tuple[str, ...]
+    args: dict[str, Any],
+    *,
+    max_steps: int,
+    full_body_actions: tuple[str, ...],
+    suggested_reply: str = "",
 ) -> Plan:
     raw_steps = args.get("steps")
     if not isinstance(raw_steps, (list, tuple)) or not raw_steps:
@@ -110,7 +133,13 @@ def _parse_plan(
             step_args = {}
         normalized = _normalize_args(action, step_args)
         if action is ActionKind.PLAY_ACTION:
+            if not normalized["name"]:
+                raise PlanRejected(f"第{index}步 play_action 缺少动作名称")
             normalized["full_body"] = normalized["name"] in full_body_actions
+        elif action is ActionKind.GENERATE_MOTION and not normalized["prompt"].strip():
+            raise PlanRejected(f"第{index}步 generate_motion 缺少动作描述 prompt")
+        elif action is ActionKind.SPEAK and normalized.get("use_suggested") and suggested_reply:
+            normalized["suggested_reply"] = suggested_reply
         steps.append(PlanStep(
             seq=_as_int(raw.get("seq"), index),
             action=action,

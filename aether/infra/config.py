@@ -25,6 +25,8 @@ class CaptureConfig(BaseModel):
     input_sample_rate: int = 16000
     chunk_ms: int = 100
     vad_threshold: float = 0.5
+    vad_rms_threshold: float = 0.02
+    vad_hangover_s: float = 0.4
 
 
 class CerebellumConfig(BaseModel):
@@ -45,6 +47,8 @@ class BrainConfig(BaseModel):
     api_key: str = ""
     persona_path: str = "docs/personas/aether-default.yaml"
     interval_s: float = 60.0
+    initial_delay_s: float = 1.0
+    min_event_interval_s: float = 15.0
     max_output_tokens: int = 512
     context_limit_tokens: int = 500_000
     evict_target_tokens: int = 350_000
@@ -69,6 +73,7 @@ class SpeechConfig(BaseModel):
     #: 虚拟声卡设备名（TTS → VRChat 麦克风）。None 表示系统默认设备。
     output_device: Optional[str] = None
     fallback_sound: str = "assets/filler.wav"
+    synthesis_allowance_s: float = 10.0
 
 
 class DartConfig(BaseModel):
@@ -83,6 +88,16 @@ class DartConfig(BaseModel):
     @property
     def health_url(self) -> str:
         return f"http://{self.host}:{self.port}/health"
+
+
+class MotionRuntimeConfig(BaseModel):
+    """动作生成器装配与超时预算配置（支持外部 HTTP 或受管 sidecar bundle）。"""
+    mode: str = "external"                     # "external" | "supervised"
+    bundle_manifest: str = ""
+    bundle_dir: str = ""
+    allow_unreleased_bundle: bool = False
+    generation_timeout_s: float = 15.0         # 单次动态生成上限，超时回退预录动作
+    synthesis_allowance_s: float = 20.0        # 调度器针对动态动作的额外 I/O 墙钟宽限
 
 
 class PostureConfig(BaseModel):
@@ -159,6 +174,7 @@ class AetherConfig(BaseModel):
     scribe: ScribeConfig = Field(default_factory=ScribeConfig)
     speech: SpeechConfig = Field(default_factory=SpeechConfig)
     dart: DartConfig = Field(default_factory=DartConfig)
+    motion: MotionRuntimeConfig = Field(default_factory=MotionRuntimeConfig)
     posture: PostureConfig = Field(default_factory=PostureConfig)
     osc: OSCConfig = Field(default_factory=OSCConfig)
     avatar: AvatarConfig = Field(default_factory=AvatarConfig)
@@ -184,8 +200,13 @@ def load_config(path: str | Path | None = None) -> AetherConfig:
         (config.speech, "fallback_sound"),
         (config.scribe, "db_path"),
         (config.log, "file"),
+        (config.motion, "bundle_manifest"),
+        (config.motion, "bundle_dir"),
     ):
-        value = Path(getattr(section, field_name))
+        raw_val = getattr(section, field_name)
+        if not raw_val:
+            continue
+        value = Path(raw_val)
         if not value.is_absolute():
             setattr(section, field_name, str(base_dir / value))
 

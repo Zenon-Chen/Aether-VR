@@ -15,10 +15,17 @@ except ImportError:  # pragma: no cover
     types = None  # type: ignore[assignment]
 
 
-def build_system_prompt(actions: tuple[str, ...], directions: tuple[str, ...]) -> str:
-    """按当前可用的预录动作与移动方向生成提示词"""
+def build_system_prompt(
+    actions: tuple[str, ...],
+    directions: tuple[str, ...],
+    expressions: tuple[str, ...] = (),
+) -> str:
+    """按当前可用的预录动作、移动方向与面部表情生成提示词"""
     action_list = "、".join(actions) if actions else "（暂无）"
     direction_list = "、".join(directions) if directions else "（暂无）"
+    default_exprs = ("neutral", "smile", "surprised", "sad", "angry")
+    expr_items = expressions if expressions else default_exprs
+    expression_list = "、".join(expr_items)
     return f"""你是 VRChat 中一个虚拟角色的运动编排系统。
 
 你的职责：把意图转化为具体动作计划。你不负责角色人格，不要自行编写人设台词。
@@ -35,16 +42,17 @@ def build_system_prompt(actions: tuple[str, ...], directions: tuple[str, ...]) -
 4. 心跳标注「计划执行中」时，不下发与其冲突的新计划，调用 ack 即可。
 5. 每个计划不超过 5 秒。长行为拆成多个计划滚动执行。
 6. 计划中每步带序号 seq；可与前一步并行的步骤标 parallel=true。
-   说话与肢体动作通常可以并行；两个占用同一身体部位的动作不能并行。
+   说话与肢体动作、表情通常可以并行；两个占用同一身体部位的动作不能并行。
 7. 说话时，若心跳提供了 suggested_reply，调用 speak 时设 use_suggested=true，
    不要自己改写台词。
 
 可用预录动作：{action_list}
 可用移动方向：{direction_list}
+可用面部表情：{expression_list}
 """
 
 
-#: 六个工具的纯数据描述 —— 便于测试与非 genai 环境引用
+#: ER2 可调用工具的纯数据描述 —— 便于测试与非 genai 环境引用
 TOOL_SPECS: list[dict[str, Any]] = [
     {
         "name": "execute_plan",
@@ -54,15 +62,31 @@ TOOL_SPECS: list[dict[str, Any]] = [
                 "type": "array",
                 "description": "动作步骤列表",
                 "items": {
-                    "seq": {"type": "integer", "description": "执行序号，从 1 开始"},
-                    "action": {
-                        "type": "string",
-                        "enum": ["speak", "expression", "play_action",
-                                 "generate_motion", "move", "wait"],
-                        "description": "动作类型",
+                    "type": "object",
+                    "description": "单个动作步骤",
+                    "properties": {
+                        "seq": {"type": "integer", "description": "执行序号，从 1 开始"},
+                        "action": {
+                            "type": "string",
+                            "enum": [
+                                "speak", "expression", "play_action",
+                                "generate_motion", "move", "wait",
+                            ],
+                            "description": "动作类型",
+                        },
+                        "args": {
+                            "type": "object",
+                            "description": (
+                                "动作参数：speak 传 {text, use_suggested}；"
+                                "play_action/expression 传 {name}；"
+                                "move 传 {direction, duration_s}；"
+                                "generate_motion 传 {prompt, duration_s, scope}；"
+                                "wait 传 {duration_s}"
+                            ),
+                        },
+                        "parallel": {"type": "boolean", "description": "是否与前一步并发"},
                     },
-                    "args": {"type": "object", "description": "动作参数"},
-                    "parallel": {"type": "boolean", "description": "是否与前一步并发"},
+                    "required": ["action"],
                 },
             }
         },
@@ -76,6 +100,22 @@ TOOL_SPECS: list[dict[str, Any]] = [
             "use_suggested": {"type": "boolean", "description": "使用心跳中的建议台词"},
         },
         "required": [],
+    },
+    {
+        "name": "play_action",
+        "description": "触发单个预录肢体动作（如 wave、nod、bow 等）。",
+        "properties": {
+            "name": {"type": "string", "description": "预录动作名称"},
+        },
+        "required": ["name"],
+    },
+    {
+        "name": "expression",
+        "description": "切换角色面部表情（如 neutral、smile、surprised、sad、angry）。",
+        "properties": {
+            "name": {"type": "string", "description": "表情名称"},
+        },
+        "required": ["name"],
     },
     {
         "name": "move",
@@ -141,39 +181,55 @@ def build_tool_declarations():
     return [types.Tool(function_declarations=declarations)]
 
 
-def _to_schema(properties: dict[str, Any]) -> dict:
-    """把纯数据描述转成 genai Schema（只处理本文件用到的类型）"""
-    out = {}
-    for key, spec in properties.items():
-        kind = spec.get("type", "string")
-        if kind == "array":
-            out[key] = types.Schema(
-                type=types.Type.ARRAY,
-                description=spec.get("description", ""),
-                items=types.Schema(type=types.Type.OBJECT),
-            )
-        elif kind == "object":
-            out[key] = types.Schema(
-                type=types.Type.OBJECT, description=spec.get("description", "")
-            )
-        elif kind == "integer":
-            out[key] = types.Schema(
-                type=types.Type.INTEGER, description=spec.get("description", "")
-            )
-        elif kind == "number":
-            out[key] = types.Schema(
-                type=types.Type.NUMBER, description=spec.get("description", "")
-            )
-        elif kind == "boolean":
-            out[key] = types.Schema(
-                type=types.Type.BOOLEAN, description=spec.get("description", "")
+def _to_schema(properties: dict[str, Any]) -> dict[str, Any]:
+    """把属性字典递归转换为 genai Schema 映射"""
+    return {key: _to_schema_node(spec) for key, spec in properties.items()}
+
+
+def _to_schema_node(spec: dict[str, Any]):
+    """递归转换单个字段 Schema，保留嵌套数组 items、对象 properties 与 enum"""
+    kind = spec.get("type", "string")
+    description = spec.get("description", "")
+
+    if kind == "array":
+        raw_items = spec.get("items") or {"type": "object"}
+        # 兼容简写形式（items 直接给字段字典而未包一层 type=object/properties）
+        if "type" not in raw_items and isinstance(raw_items, dict):
+            item_schema = types.Schema(
+                type=types.Type.OBJECT,
+                properties=_to_schema(raw_items),
             )
         else:
-            schema_args: dict[str, Any] = {
-                "type": types.Type.STRING,
-                "description": spec.get("description", ""),
-            }
-            if "enum" in spec:
-                schema_args["enum"] = spec["enum"]
-            out[key] = types.Schema(**schema_args)
-    return out
+            item_schema = _to_schema_node(raw_items)
+        return types.Schema(
+            type=types.Type.ARRAY,
+            description=description,
+            items=item_schema,
+        )
+
+    if kind == "object":
+        schema_kwargs: dict[str, Any] = {
+            "type": types.Type.OBJECT,
+            "description": description,
+        }
+        nested = spec.get("properties")
+        if isinstance(nested, dict) and nested:
+            schema_kwargs["properties"] = _to_schema(nested)
+        if spec.get("required"):
+            schema_kwargs["required"] = list(spec["required"])
+        return types.Schema(**schema_kwargs)
+
+    if kind == "integer":
+        return types.Schema(type=types.Type.INTEGER, description=description)
+    if kind == "number":
+        return types.Schema(type=types.Type.NUMBER, description=description)
+    if kind == "boolean":
+        return types.Schema(type=types.Type.BOOLEAN, description=description)
+
+    string_kwargs: dict[str, Any] = {
+        "type": types.Type.STRING,
+        "description": description,
+    }
+    if "enum" in spec:
+        string_kwargs["enum"] = list(spec["enum"])
+    return types.Schema(**string_kwargs)

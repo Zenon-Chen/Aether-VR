@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+import hashlib
 import json
 import os
 import secrets
@@ -58,6 +59,24 @@ class BundleManifest:
             "release_blockers": list(self.release_blockers),
         }
 
+    def verify_integrity(
+        self, bundle_dir: Path, *, allow_unreleased: bool = True
+    ) -> None:
+        if not allow_unreleased and self.release_blockers:
+            raise RuntimeError(
+                f"bundle {self.provider_id}@{self.version} has release blockers: "
+                + "; ".join(self.release_blockers)
+            )
+        if self.sha256:
+            target = Path(self.executable.replace("{bundle_dir}", str(bundle_dir)))
+            if not target.is_file():
+                raise FileNotFoundError(f"bundle executable not found for sha256 check: {target}")
+            digest = hashlib.sha256(target.read_bytes()).hexdigest()
+            if digest.lower() != self.sha256.strip().lower():
+                raise ValueError(
+                    f"bundle executable sha256 mismatch: expected {self.sha256}, got {digest}"
+                )
+
 
 @dataclass(frozen=True, slots=True)
 class Endpoint:
@@ -90,6 +109,7 @@ class MotionProviderSupervisor:
         bundle_dir: str | Path,
         *,
         client: httpx.AsyncClient | None = None,
+        allow_unreleased: bool = True,
     ) -> None:
         self.manifest = manifest
         self.bundle_dir = Path(bundle_dir)
@@ -101,16 +121,34 @@ class MotionProviderSupervisor:
         self._last_error: str | None = None
         self._client = client
         self._owns_client = client is None
+        self._probe_client: httpx.AsyncClient | None = None
+        self._allow_unreleased = allow_unreleased
         self._job = None
         self._stopping = False
+
+    def _get_http_client(self, timeout: httpx.Timeout | float) -> httpx.AsyncClient:
+        if self._client is not None:
+            return self._client
+        if self._probe_client is None:
+            # 本地回环 HTTP 边车无需加载系统 SSL 根证书库（避免 Windows 下 ~200ms 初始化阻塞），
+            # 且必须禁用环境变量代理（避免 Clash/系统代理劫持 127.0.0.1 探针）。
+            self._probe_client = httpx.AsyncClient(
+                timeout=timeout, trust_env=False, verify=False
+            )
+        return self._probe_client
 
     async def start(self) -> Endpoint:
         if self._process and self._process.returncode is None and self.endpoint:
             return self.endpoint
+        self.manifest.verify_integrity(
+            self.bundle_dir, allow_unreleased=self._allow_unreleased
+        )
         self._stopping = False
         self.endpoint = self.endpoint or Endpoint(
             "127.0.0.1", _free_port(), secrets.token_urlsafe(32), self.bundle_dir
         )
+        # 在 _spawn 之前预热 HTTP 客户端，确保子进程一监听即可毫秒级命中探针
+        self._get_http_client(httpx.Timeout(1.0, connect=0.04))
         last_error: Exception | None = None
         for attempt in range(self.manifest.max_restarts + 1):
             if attempt:
@@ -179,26 +217,24 @@ class MotionProviderSupervisor:
 
     async def _probe_until_ready(self) -> None:
         assert self.endpoint
-        client = self._client or httpx.AsyncClient(timeout=1.0)
+        probe_timeout = httpx.Timeout(1.0, connect=0.04)
+        client = self._get_http_client(probe_timeout)
         deadline = time.monotonic() + self.manifest.startup_timeout
-        try:
-            while time.monotonic() < deadline:
-                if not self._process or self._process.returncode is not None:
-                    raise RuntimeError("sidecar exited during startup")
-                try:
-                    response = await client.get(
-                        self.endpoint.base_url + self.manifest.health_path,
-                        headers={"Authorization": f"Bearer {self.endpoint.token}"},
-                    )
-                    if response.status_code == 200:
-                        return
-                except httpx.HTTPError:
-                    pass
-                await asyncio.sleep(0.05)
-            raise TimeoutError("sidecar health probe timed out")
-        finally:
-            if self._client is None:
-                await client.aclose()
+        while time.monotonic() < deadline:
+            if not self._process or self._process.returncode is not None:
+                raise RuntimeError("sidecar exited during startup")
+            try:
+                response = await client.get(
+                    self.endpoint.base_url + self.manifest.health_path,
+                    headers={"Authorization": f"Bearer {self.endpoint.token}"},
+                    timeout=probe_timeout,
+                )
+                if response.status_code == 200:
+                    return
+            except httpx.HTTPError:
+                pass
+            await asyncio.sleep(0.01)
+        raise TimeoutError("sidecar health probe timed out")
 
     async def _monitor(self) -> None:
         while not self._stopping:
@@ -222,11 +258,37 @@ class MotionProviderSupervisor:
                 self._last_error = str(exc)
                 await self._terminate()
 
+    @staticmethod
+    def _win32_kernel():
+        from ctypes import wintypes
+
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.CreateJobObjectW.argtypes = [wintypes.LPVOID, wintypes.LPCWSTR]
+        kernel.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel.SetInformationJobObject.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD,
+        ]
+        kernel.SetInformationJobObject.restype = wintypes.BOOL
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        kernel.AssignProcessToJobObject.restype = wintypes.BOOL
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        kernel.CloseHandle.restype = wintypes.BOOL
+        return kernel
+
+    def _close_job(self) -> None:
+        if os.name == "nt" and self._job:
+            self._win32_kernel().CloseHandle(self._job)
+            self._job = None
+
     def _assign_windows_job(self, pid: int) -> None:
         """Best-effort kill-on-job-close for the supervised process tree."""
         if os.name != "nt":
             return
-        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        # 重启子进程前先释放上一轮遗留的 Job 句柄，防止内核句柄泄漏
+        self._close_job()
+        kernel = self._win32_kernel()
         job = kernel.CreateJobObjectW(None, None)
         if not job:
             return
@@ -292,9 +354,7 @@ class MotionProviderSupervisor:
                     except ProcessLookupError:
                         pass
                 await process.wait()
-        if self._job:
-            ctypes.WinDLL("kernel32", use_last_error=True).CloseHandle(self._job)
-            self._job = None
+        self._close_job()
         self._close_log()
 
     def _close_log(self) -> None:
@@ -312,6 +372,9 @@ class MotionProviderSupervisor:
 
     async def close(self) -> None:
         await self.stop()
+        if self._probe_client is not None:
+            await self._probe_client.aclose()
+            self._probe_client = None
         if self._client is not None and self._owns_client:
             await self._client.aclose()
 
@@ -330,18 +393,16 @@ class MotionProviderSupervisor:
     async def health(self) -> bool:
         if not self.endpoint or not self._process or self._process.returncode is not None:
             return False
-        client = self._client or httpx.AsyncClient(timeout=2.0)
+        client = self._get_http_client(2.0)
         try:
             response = await client.get(
                 self.endpoint.base_url + self.manifest.health_path,
                 headers={"Authorization": f"Bearer {self.endpoint.token}"},
+                timeout=2.0,
             )
             return response.status_code == 200
         except httpx.HTTPError:
             return False
-        finally:
-            if self._client is None:
-                await client.aclose()
 
 
 class BundleRegistry:
@@ -402,7 +463,8 @@ class BundleRegistry:
 
     async def rollback(self) -> Endpoint | None:
         if not self._previous:
-            return self._supervisors.get(self.active).endpoint if self.active else None
+            sup = self._supervisors.get(self.active) if self.active else None
+            return sup.endpoint if sup is not None else None
         target = self._previous.pop()
         current = self.active
         if not await self.probe(target):

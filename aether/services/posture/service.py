@@ -7,13 +7,12 @@ from typing import Optional
 
 from ...contracts.frame import PostureFrame
 from ...contracts.motion import MotionRequest
-from ...infra.config import DartConfig, PostureConfig
-from ..motion.providers.dart import DartMotionProvider
+from ...infra.config import PostureConfig
 from ..ports import MotionProviderPort
 from .playback import MotionPlayback, PlaybackMode, _apply_scope, _resample
 from .projector import TrackerProjector
 from .sink import SteamVRTrackerSink
-from .smpl_transform import convert_sequence, lerp_frame, standing_frame
+from .smpl_transform import convert_sequence, standing_frame, lerp_frame
 
 # Preserve the public enum name while keeping a single playback state type.
 PostureMode = PlaybackMode
@@ -25,17 +24,20 @@ class PostureService:
     def __init__(
         self,
         config: PostureConfig,
-        dart: DartConfig,
+        dart: object = None,
         motion_provider: MotionProviderPort | None = None,
         *,
         projector: TrackerProjector | None = None,
         sink: SteamVRTrackerSink | None = None,
         playback: MotionPlayback | None = None,
     ) -> None:
+        # 严格遵守 AGENTS.md：services 互不引用；MotionProviderPort 由 runtime 注入。
+        # 保留可选位置参数 `dart` 仅用于向后兼容直接验证 45Hz UDP 保活流的调用方。
+        _ = dart
+        if isinstance(dart, MotionProviderPort) and motion_provider is None:
+            motion_provider = dart
         self._config = config
-        self._provider = motion_provider or DartMotionProvider(
-            f"http://{dart.host}:{dart.port}", timeout_s=dart.timeout_s
-        )
+        self._provider: MotionProviderPort | None = motion_provider
         self._projector = projector or TrackerProjector()
         self._sink = sink or SteamVRTrackerSink(config.bridge_host, config.bridge_port)
         self._playback = playback or MotionPlayback(
@@ -45,9 +47,10 @@ class PostureService:
 
     async def start(self) -> None:
         # Keep compatibility with legacy test doubles while real providers own startup.
-        start = getattr(self._provider, "start", None)
-        if start is not None:
-            await start()
+        if self._provider is not None:
+            start = getattr(self._provider, "start", None)
+            if start is not None:
+                await start()
         self._sink.start()
         self._running = True
         await self._playback.start()
@@ -55,17 +58,22 @@ class PostureService:
     async def stop(self) -> None:
         self._running = False
         await self._playback.stop()
-        await self._provider.close()
+        if self._provider is not None:
+            await self._provider.close()
         self._sink.close()
 
     async def health(self) -> str:
         if not self._running:
             return "stopped"
+        if self._provider is None:
+            return "degraded"
         report = await self._provider.health()
         return "ok" if report.healthy else "degraded"
 
     async def check_dart(self) -> bool:
         """Compatibility probe; callers should prefer provider health reports."""
+        if self._provider is None:
+            return False
         return (await self._provider.health()).healthy
 
     async def play(
@@ -73,6 +81,8 @@ class PostureService:
     ) -> str:
         if not self._running:
             raise RuntimeError("posture 服务未启动")
+        if self._provider is None:
+            raise RuntimeError("posture 未注入 motion_provider")
         request = MotionRequest(
             request_id=str(uuid.uuid4()),
             prompt=prompt,

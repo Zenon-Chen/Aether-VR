@@ -6,7 +6,8 @@ import math
 import time
 from typing import Callable, Optional
 
-from ...contracts.vision import TargetObservation, VisionStatus, VisionTrackerPort
+from ...contracts.vision import TargetObservation, VisionStatus
+from ..ports import VisionTrackerPort
 
 
 class DegradedVisionTracker(VisionTrackerPort):

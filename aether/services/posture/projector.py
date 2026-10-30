@@ -90,6 +90,10 @@ class TrackerProjector:
                 motion.joint_positions[frame_index]
                 if motion.joint_positions else tuple(derived_positions)
             )
+            if len(positions) < 22:
+                raise ValueError(
+                    f"frame {frame_index} joint_positions requires at least 22 joints, got {len(positions)}"
+                )
             output_positions = (
                 tuple(_z_to_y_position(value) for value in positions)
                 if motion.up_axis == "z" else positions

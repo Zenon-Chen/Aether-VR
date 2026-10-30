@@ -181,3 +181,32 @@ async def test_supervised_provider_passes_runtime_token_to_adapter(tmp_path: Pat
         assert (await provider.health()).healthy
     finally:
         await provider.close()
+
+
+@pytest.mark.asyncio
+async def test_registry_rollback_after_reload_without_previous_is_safe(tmp_path: Path):
+    root = tmp_path / "registry"
+    registry = BundleRegistry(root)
+    registry.stage(_manifest("v1"), tmp_path / "v1")
+    await registry.activate("v1")
+    await registry._supervisors["v1"].close()
+
+    reloaded = BundleRegistry(root)
+    assert reloaded.active == "v1"
+    assert await reloaded.rollback() is None
+
+
+def test_manifest_integrity_checks_sha256_and_release_blockers(tmp_path: Path):
+    exe = tmp_path / "runner.py"
+    exe.write_bytes(b"print('ok')\n")
+    bad_hash = BundleManifest(
+        provider_id="m", version="1", executable="{bundle_dir}/runner.py", sha256="0" * 64
+    )
+    with pytest.raises(ValueError, match="sha256 mismatch"):
+        bad_hash.verify_integrity(tmp_path)
+
+    blocked = BundleManifest(
+        provider_id="m", version="1", executable=sys.executable, release_blockers=("unbundled",)
+    )
+    with pytest.raises(RuntimeError, match="release blockers"):
+        blocked.verify_integrity(tmp_path, allow_unreleased=False)

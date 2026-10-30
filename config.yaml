@@ -1,4 +1,4 @@
-# Aether 配置
+# Aether VR 配置
 # API Key 通过 GEMINI_API_KEY 环境变量设置，不要写入此文件
 
 # ── 感知采集 ──────────────────────────────────
@@ -10,6 +10,8 @@ capture:
   monitor: 1              # 1 = 主显示器
   input_sample_rate: 16000
   chunk_ms: 100           # 100ms PCM 块，永不停止
+  vad_rms_threshold: 0.02 # 归一化 PCM16 RMS 语音活动阈值
+  vad_hangover_s: 0.4     # 语音尾音保持秒数（防断句闪烁）
 
 # ── 小脑：ER2 运动编排 ────────────────────────
 cerebellum:
@@ -26,6 +28,8 @@ brain:
   model: "gemini-3.5-flash-lite"
   persona_path: "docs/personas/aether-default.yaml"
   interval_s: 60  # 2 小时约 120 次观察，为 Scribe evaluator 保留每日额度
+  initial_delay_s: 1.0            # 启动后首轮热观察延迟
+  min_event_interval_s: 15.0      # 用户新发言触发提前观察的最小冷却间隔
   max_output_tokens: 512
   context_limit_tokens: 500000
   evict_target_tokens: 350000     # 驱逐滞回，避免频繁触发
@@ -46,12 +50,22 @@ speech:
   output_sample_rate: 24000
   output_device: "MIXLINE"        # 扬声器 (MIXLINE) → MIXLINE Stream 虚拟麦 → VRChat
   fallback_sound: "assets/filler.wav"
+  synthesis_allowance_s: 10.0     # 云端 TTS 合成额外墙钟宽限
 
 # ── DART 动作生成（WSL2）──────────────────────
 dart:
   host: "127.0.0.1"
   port: 8900
   timeout_s: 60.0
+
+# ── 动作生成器装配与预算 ───────────────────────
+motion:
+  mode: "external"                # external = 固定 HTTP DART；supervised = 受管 sidecar bundle
+  bundle_manifest: ""
+  bundle_dir: ""
+  allow_unreleased_bundle: false
+  generation_timeout_s: 15.0      # 单次动态生成上限，超时自动回退预录动作
+  synthesis_allowance_s: 20.0     # 调度器针对动态动作的额外 I/O 宽限
 
 # ── 姿态桥：DART → SteamVR 六设备 ─────────────
 posture:

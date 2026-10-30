@@ -32,6 +32,7 @@ class ActionKind(str, Enum):
     PLAY_ACTION = "play_action"        # 预录动作 ActionID
     GENERATE_MOTION = "generate_motion"  # DART 动态生成
     MOVE = "move"                      # 移动 OSC 输入轴
+    APPROACH = "approach"              # 视觉伺服脉冲逼近目标
     WAIT = "wait"                      # 显式停顿
 
 
@@ -42,6 +43,7 @@ CHANNEL_USAGE: dict[ActionKind, frozenset[Channel]] = {
     ActionKind.PLAY_ACTION: frozenset({Channel.UPPER_BODY}),
     ActionKind.GENERATE_MOTION: frozenset({Channel.UPPER_BODY}),
     ActionKind.MOVE: frozenset({Channel.MOVEMENT}),
+    ActionKind.APPROACH: frozenset({Channel.MOVEMENT}),
     ActionKind.WAIT: frozenset(),
 }
 
@@ -70,8 +72,8 @@ class PlanStep:
 
 
 def estimated_step_seconds(step: PlanStep) -> float:
-    """返回计划预算使用的保守时长估计，并拒绝无效时间参数。"""
-    for key in ("duration_s", "duration", "timeout"):
+    """返回计划预算与通道占用登记统一使用的保守时长估计，并拒绝无效时间参数。"""
+    for key in ("duration_s", "duration", "expected_duration_s", "timeout"):
         if key not in step.args:
             continue
         try:
@@ -85,9 +87,13 @@ def estimated_step_seconds(step: PlanStep) -> float:
         return float(step.args["duration_s"])
     if "duration" in step.args:
         return float(step.args["duration"])
+    if "expected_duration_s" in step.args:
+        return float(step.args["expected_duration_s"])
     if step.action is ActionKind.SPEAK:
-        text = str(step.args.get("text", ""))
-        return max(0.4, len(text) / 8.0)
+        text = str(step.args.get("suggested_reply") or step.args.get("text") or "")
+        return max(0.4, len(text) / 5.5)
+    if step.action is ActionKind.APPROACH:
+        return float(step.args.get("timeout", 30.0))
     if step.action is ActionKind.WAIT:
         return 0.5
     if step.action in (ActionKind.EXPRESSION, ActionKind.PLAY_ACTION):

@@ -59,6 +59,9 @@ class AvatarService:
     def known_actions(self) -> tuple[str, ...]:
         return tuple(k for k in self._config.actions if k != "idle")
 
+    def known_expressions(self) -> tuple[str, ...]:
+        return tuple(self._config.expressions)
+
     def is_full_body(self, name: str) -> bool:
         return name in self._config.full_body_actions
 

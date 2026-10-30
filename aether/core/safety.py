@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import time
 from typing import Awaitable, Callable
 
@@ -20,6 +21,13 @@ logger = logging.getLogger(__name__)
 
 #: 本地关键词，命中即触发，不经过任何模型
 STOP_KEYWORDS = ("停下", "别动", "停止", "stop", "freeze")
+_CJK_STOP_KEYWORDS = tuple(kw for kw in STOP_KEYWORDS if not kw.isascii())
+_ASCII_STOP_PATTERN = re.compile(
+    r"(?<![a-z0-9_])(?:"
+    + "|".join(re.escape(kw) for kw in STOP_KEYWORDS if kw.isascii())
+    + r")(?![a-z0-9_])",
+    re.IGNORECASE,
+)
 
 #: 每个停止动作的独立超时，避免某一环卡住整体
 _ACTION_TIMEOUT_S = 0.5
@@ -43,8 +51,12 @@ class EmergencyStop:
 
     @staticmethod
     def matches_keyword(text: str) -> bool:
-        lowered = (text or "").lower()
-        return any(kw in lowered for kw in STOP_KEYWORDS)
+        raw = (text or "").strip()
+        if not raw:
+            return False
+        if any(kw in raw for kw in _CJK_STOP_KEYWORDS):
+            return True
+        return bool(_ASCII_STOP_PATTERN.search(raw))
 
     @property
     def last_reason(self) -> str:

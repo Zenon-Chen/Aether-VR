@@ -144,3 +144,32 @@ async def test_playback_failure_does_not_count_as_success(monkeypatch):
     with pytest.raises(SpeechUnavailableError, match="不可用|播放失败"):
         await service.speak("播放失败。")
     assert await service.health() == "degraded"
+
+
+@pytest.mark.asyncio
+async def test_cancellation_halts_audio_and_releases_lock(monkeypatch):
+    import asyncio as aio
+
+    service = _service([b"\x01\x00" * 24000])
+    halted = []
+    started = aio.Event()
+
+    async def orig_halt():
+        halted.append(True)
+
+    async def blocking_play(_pcm):
+        started.set()
+        await aio.Event().wait()
+        return 1.0
+
+    monkeypatch.setattr(service, "halt", orig_halt)
+    monkeypatch.setattr(service, "_play", blocking_play)
+
+    task = aio.create_task(service.speak("一段会被中途取消的长语音"))
+    await started.wait()
+    task.cancel()
+    with pytest.raises(aio.CancelledError):
+        await task
+
+    assert halted == [True]
+    assert not service._lock.locked()

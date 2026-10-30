@@ -10,9 +10,6 @@
     1. 删减必须留摘要指针，不能真删（否则引用断裂造成人设事故）
     2. 驱逐 = 从上下文移出 + 写入长期记忆库
     另：驱逐有滞回，一次清到 evict_target 再停，避免频繁触发。
-
-阶段 2 接入；当前为可用的本地骨架（SQLite 落盘 + 三档标记），
-批量重要性标记的模型调用留待接入大脑时补齐。
 """
 
 from __future__ import annotations
@@ -68,9 +65,12 @@ class ScribeService:
     def __init__(self, config: ScribeConfig) -> None:
         self._config = config
         self._pending: list[Block] = []
+        self._marking: list[Block] = []
         self._blocks: list[Block] = []
         self._db: Optional[sqlite3.Connection] = None
         self._lock = asyncio.Lock()
+        self._eval_lock = asyncio.Lock()
+        self._db_lock = asyncio.Lock()
         self._persisted_count = 0
         self._evaluator: Optional[
             Callable[[list[dict[str, str]]], Awaitable[list[dict[str, str]]]]
@@ -91,9 +91,15 @@ class ScribeService:
             logger.info("[Scribe] 未启用（阶段 2 接入）")
             return
         path = Path(self._config.db_path)
+        async with self._db_lock:
+            self._db = await asyncio.to_thread(self._open_db_sync, path)
+        logger.info("[Scribe] 记忆库就绪：%s", path)
+
+    @staticmethod
+    def _open_db_sync(path: Path) -> sqlite3.Connection:
         path.parent.mkdir(parents=True, exist_ok=True)
-        self._db = sqlite3.connect(str(path), check_same_thread=False)
-        self._db.execute("""
+        conn = sqlite3.connect(str(path), check_same_thread=False)
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS memory (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at REAL NOT NULL,
@@ -102,14 +108,16 @@ class ScribeService:
                 summary TEXT DEFAULT ''
             )
         """)
-        self._db.commit()
-        logger.info("[Scribe] 记忆库就绪：%s", path)
+        conn.commit()
+        return conn
 
     async def stop(self) -> None:
         await self.flush()
-        if self._db is not None:
-            self._db.close()
-            self._db = None
+        async with self._db_lock:
+            if self._db is not None:
+                db = self._db
+                self._db = None
+                await asyncio.to_thread(db.close)
 
     async def health(self) -> str:
         if not self._config.enabled:
@@ -119,23 +127,32 @@ class ScribeService:
     # ── 记录 ───────────────────────────────────────────────
 
     async def note(self, kind: str, content: str) -> None:
-        """登记一个推理块；积攒到 batch_size 后批量标记"""
+        """登记一个推理块；积攒到 batch_size 后在锁外执行批量标记"""
         if not self._config.enabled or not content.strip():
             return
+        batch_to_mark: Optional[list[Block]] = None
         async with self._lock:
             self._pending.append(Block(kind=kind, content=content))
             if len(self._pending) >= self._config.batch_size:
-                await self._mark_batch()
+                batch_to_mark, self._pending = self._pending, []
+                self._marking.extend(batch_to_mark)
 
-    async def _mark_batch(self) -> None:
-        """批量标记重要性，模型不可用时回退本地启发式。"""
-        batch, self._pending = self._pending, []
+        if batch_to_mark is not None:
+            async with self._eval_lock:
+                await self._mark_batch(batch_to_mark)
+
+    async def _mark_batch(self, batch: list[Block]) -> None:
+        """在写锁之外请求评估模型，结果返回后再合并并执行驱逐检查。"""
         decisions: list[dict[str, str]] = []
-        if self._evaluator is not None:
-            decisions = await self._evaluator([
-                {"kind": block.kind, "content": block.content}
-                for block in batch
-            ])
+        try:
+            if self._evaluator is not None:
+                decisions = await self._evaluator([
+                    {"kind": block.kind, "content": block.content}
+                    for block in batch
+                ])
+        except Exception:
+            logger.exception("[Scribe] 模型评估异常，回退启发式标记")
+            decisions = []
 
         for index, block in enumerate(batch):
             decision = decisions[index] if index < len(decisions) else {}
@@ -148,25 +165,37 @@ class ScribeService:
                     str(decision.get("summary", "")).strip()
                     or _one_line(block.content)
                 )
-        self._blocks.extend(b for b in batch if b.importance is not Importance.WORTHLESS)
-        await self._enforce_limit()
-        logger.debug("[Scribe] 批量标记 %d 块，保留 %d", len(batch), len(self._blocks))
 
-    async def _enforce_limit(self) -> None:
-        """超过上限时先驱逐 normal，再按确定性价值分驱逐 important。"""
+        evictions: list[tuple[str, str, str]] = []
+        async with self._lock:
+            batch_ids = {id(item) for item in batch}
+            self._marking = [b for b in self._marking if id(b) not in batch_ids]
+            self._blocks.extend(
+                b for b in batch if b.importance is not Importance.WORTHLESS
+            )
+            evictions = self._collect_evictions_locked()
+            logger.debug("[Scribe] 批量标记 %d 块，保留 %d", len(batch), len(self._blocks))
+
+        for content, evicted_kind, pointer in evictions:
+            await self.remember(content, evicted_kind, summary=pointer)
+
+    def _collect_evictions_locked(self) -> list[tuple[str, str, str]]:
+        """在锁内挑出需驱逐的块并移出上下文，返回待落盘三元组。"""
         if self.context_tokens <= self._config.context_limit_tokens:
-            return
+            return []
         normals = [b for b in self._blocks if b.importance is Importance.NORMAL]
         importants = sorted(
             (b for b in self._blocks if b.importance is Importance.IMPORTANT),
             key=self._retention_score,
         )
+        evicted: list[tuple[str, str, str]] = []
         for block in normals + importants:
             if self.context_tokens <= self._config.evict_target_tokens:
-                return
+                break
             pointer = block.summary or _one_line(block.content)
-            await self.remember(block.content, f"evicted_{block.kind}", summary=pointer)
+            evicted.append((block.content, f"evicted_{block.kind}", pointer))
             self._blocks.remove(block)
+        return evicted
 
     def _retention_score(self, block: Block) -> float:
         """高价值关键字、引用次数和近期性共同决定保留价值。"""
@@ -187,73 +216,125 @@ class ScribeService:
         summary: str = "",
     ) -> None:
         """写入长期记忆库 —— 驱逐时必须调用，保证信息不消失"""
-        if self._db is None:
-            return
         now = time.time()
-        duplicate = self._db.execute(
+        async with self._db_lock:
+            db = self._db
+            if db is None:
+                return
+            inserted = await asyncio.to_thread(
+                self._remember_sync,
+                db,
+                now,
+                kind,
+                content,
+                summary,
+                self._config.dedupe_window_s,
+            )
+            if inserted:
+                self._persisted_count += 1
+
+    @staticmethod
+    def _remember_sync(
+        db: sqlite3.Connection,
+        now: float,
+        kind: str,
+        content: str,
+        summary: str,
+        dedupe_window_s: float,
+    ) -> bool:
+        duplicate = db.execute(
             "SELECT 1 FROM memory "
             "WHERE kind = ? AND content = ? AND created_at >= ? LIMIT 1",
-            (kind, content, now - self._config.dedupe_window_s),
+            (kind, content, now - dedupe_window_s),
         ).fetchone()
         if duplicate is not None:
-            return
-        self._db.execute(
+            return False
+        db.execute(
             "INSERT INTO memory (created_at, kind, content, summary) VALUES (?, ?, ?, ?)",
             (now, kind, content, summary),
         )
-        self._db.commit()
-        self._persisted_count += 1
+        db.commit()
+        return True
 
     async def recall(self, query: str, max_tokens: int = 2000) -> str:
-        """检索长期记忆（当前为关键词匹配，接入嵌入后替换）"""
-        if self._db is None:
-            return ""
-        cursor = self._db.execute(
-            "SELECT content FROM memory WHERE content LIKE ? "
+        """检索长期记忆（同时匹配原文与摘要指针）"""
+        async with self._db_lock:
+            db = self._db
+            if db is None:
+                return ""
+            rows = await asyncio.to_thread(self._recall_sync, db, query)
+        return _fit_recent(rows, max_tokens)
+
+    @staticmethod
+    def _recall_sync(db: sqlite3.Connection, query: str) -> list[tuple[str]]:
+        pattern = f"%{query}%"
+        cursor = db.execute(
+            "SELECT content FROM memory "
+            "WHERE content LIKE ? OR summary LIKE ? "
             "ORDER BY created_at DESC LIMIT 20",
-            (f"%{query}%",),
+            (pattern, pattern),
         )
-        return _fit_recent(cursor.fetchall(), max_tokens)
+        return cursor.fetchall()
 
     async def recall_recent(self, max_tokens: int = 2000) -> str:
         """读取 SQLite 中最近的长期记忆，供大脑观察循环回流。"""
-        if self._db is None:
-            return ""
-        cursor = self._db.execute(
+        async with self._db_lock:
+            db = self._db
+            if db is None:
+                return ""
+            rows = await asyncio.to_thread(self._recall_recent_sync, db)
+        return _fit_recent(rows, max_tokens)
+
+    @staticmethod
+    def _recall_recent_sync(db: sqlite3.Connection) -> list[tuple[str]]:
+        cursor = db.execute(
             "SELECT content FROM memory ORDER BY created_at DESC LIMIT 20"
         )
-        return _fit_recent(cursor.fetchall(), max_tokens)
+        return cursor.fetchall()
 
     async def flush(self) -> None:
-        """会话结束时把待处理块落盘"""
-        async with self._lock:
-            if self._pending:
-                await self._mark_batch()
-            for block in self._blocks:
-                if block.importance is Importance.IMPORTANT:
-                    await self.remember(block.content, block.kind)
+        """会话结束时把待处理块与重要块落盘"""
+        async with self._eval_lock:
+            batch_to_mark: Optional[list[Block]] = None
+            async with self._lock:
+                if self._pending:
+                    batch_to_mark, self._pending = self._pending, []
+                    self._marking.extend(batch_to_mark)
+            if batch_to_mark is not None:
+                await self._mark_batch(batch_to_mark)
+
+            async with self._lock:
+                important_snapshot = [
+                    (block.content, block.kind)
+                    for block in self._blocks
+                    if block.importance is Importance.IMPORTANT
+                ]
+            for content, kind in important_snapshot:
+                await self.remember(content, kind)
 
     def render_active_context(self, max_tokens: int = 4000) -> str:
-        """渲染 pending 与已裁决活动块；normal 绝不暴露原文。"""
-        lines: list[str] = []
+        """按「最新优先」选取活动块并正序渲染，确保近期对话与 pending 永不被旧块遮蔽。"""
+        selected: list[str] = []
         used = 0
-        for block in [*self._blocks, *self._pending]:
+        all_blocks = [*self._blocks, *self._marking, *self._pending]
+        for block in reversed(all_blocks):
             text = block.active_text
             cost = block.tokens
             if used + cost > max_tokens:
                 break
-            lines.append(f"[{block.kind}] {text}")
+            selected.append(f"[{block.kind}] {text}")
             used += cost
-        return "\n".join(lines)
+        selected.reverse()
+        return "\n".join(selected)
 
     @property
     def context_tokens(self) -> int:
-        return sum(b.tokens for b in [*self._blocks, *self._pending])
+        return sum(b.tokens for b in [*self._blocks, *self._marking, *self._pending])
 
     @property
     def metrics(self) -> dict[str, int]:
         return {
-            "pending_blocks": len(self._pending),
+            "pending_blocks": len(self._pending) + len(self._marking),
             "active_blocks": len(self._blocks),
             "active_tokens": self.context_tokens,
             "persisted_blocks": self._persisted_count,
@@ -273,9 +354,14 @@ def _fit_recent(rows: list[tuple[str]], max_tokens: int) -> str:
 
 
 def _heuristic_importance(block: Block) -> Importance:
-    """占位启发式：无事件心跳确认为零价值，含事实陈述为重要"""
+    """本地启发式：无事件心跳与 ack 工具调用判为零价值，含持久事实陈述为重要"""
     text = block.content.strip()
-    if not text or text.startswith("[HEARTBEAT") and "ack" in text.lower():
+    lower = text.lower()
+    if not text:
+        return Importance.WORTHLESS
+    if block.kind == "tool" and (lower == "ack({})" or lower.startswith("ack(")):
+        return Importance.WORTHLESS
+    if text.startswith("[HEARTBEAT") and "ack" in lower:
         return Importance.WORTHLESS
     if any(k in text for k in ("我叫", "我的名字", "记住", "喜欢", "讨厌", "明天", "答应")):
         return Importance.IMPORTANT

@@ -5,6 +5,7 @@ import os
 import platform
 import random
 import sys
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -152,6 +153,7 @@ class DartBackend:
         )
         self.module = None
         self.loaded = False
+        self._cwd_lock = threading.Lock()
 
     def _import_server(self):
         server = self.root / "server.py"
@@ -246,12 +248,13 @@ class DartBackend:
     def generate(self, text: str, batch_size: int = 1, guidance_param: float = 5.0) -> dict[str, Any]:
         if not self.loaded or self.module is None:
             raise RuntimeError("backend is not started")
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(self.root)
-            return self.module.generate_motion(text, batch_size, guidance_param)
-        finally:
-            os.chdir(old_cwd)
+        with self._cwd_lock:
+            old_cwd = os.getcwd()
+            try:
+                os.chdir(self.root)
+                return self.module.generate_motion(text, batch_size, guidance_param)
+            finally:
+                os.chdir(old_cwd)
 
 
 def load_backend(config):

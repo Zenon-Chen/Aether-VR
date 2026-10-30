@@ -44,10 +44,12 @@ class CerebellumService:
         config: CerebellumConfig,
         actions: tuple[str, ...] = (),
         directions: tuple[str, ...] = (),
+        expressions: tuple[str, ...] = (),
     ) -> None:
         self._config = config
         self._actions = actions
         self._directions = directions
+        self._expressions = expressions
         self._client = None
         self._session = None
         self._session_cm = None
@@ -60,6 +62,7 @@ class CerebellumService:
         self._on_tool_call: Optional[ToolCallHandler] = None
         self._on_text: Optional[TextHandler] = None
         self._on_transcript: Optional[TranscriptHandler] = None
+        self._on_partial_transcript: Optional[TranscriptHandler] = None
         self._input_transcript_parts: list[str] = []
         self._send_lock = asyncio.Lock()
         self._reconnect_lock = asyncio.Lock()
@@ -75,6 +78,9 @@ class CerebellumService:
 
     def set_transcript_handler(self, handler: TranscriptHandler) -> None:
         self._on_transcript = handler
+
+    def set_partial_transcript_handler(self, handler: TranscriptHandler) -> None:
+        self._on_partial_transcript = handler
 
     # ── 生命周期 ───────────────────────────────────────────
 
@@ -105,7 +111,9 @@ class CerebellumService:
     def _build_config(self) -> dict:
         config: dict[str, Any] = {
             "response_modalities": self._config.response_modalities,
-            "system_instruction": build_system_prompt(self._actions, self._directions),
+            "system_instruction": build_system_prompt(
+                self._actions, self._directions, self._expressions
+            ),
             "tools": build_tool_declarations(),
             "input_audio_transcription": types.AudioTranscriptionConfig(),
             "context_window_compression": types.ContextWindowCompressionConfig(
@@ -275,6 +283,10 @@ class CerebellumService:
                 text = str(getattr(transcription, "text", "") or "").strip()
                 if text:
                     self._input_transcript_parts.append(text)
+                    if self._on_partial_transcript is not None:
+                        self._on_partial_transcript(
+                            " ".join(self._input_transcript_parts).strip()
+                        )
                 if getattr(transcription, "finished", False):
                     line = " ".join(self._input_transcript_parts).strip()
                     self._input_transcript_parts.clear()

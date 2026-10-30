@@ -132,3 +132,45 @@ async def test_plan_wall_clock_deadline_cancels_and_releases_channels():
     assert state.facts.busy_channels() == ()
     assert state.facts.active_plan is None
     assert any("墙钟期限" in item for item in state.facts.recent_results)
+
+
+@pytest.mark.asyncio
+async def test_io_allowance_separates_synthesis_latency_from_action_budget():
+    state = StateStore()
+    sched = Scheduler(
+        state,
+        max_plan_seconds=0.5,
+        io_allowance_fn=lambda plan: 0.6 if any(s.action is ActionKind.SPEAK for s in plan.steps) else 0.0,
+    )
+
+    async def slow_tts(_step):
+        await asyncio.sleep(0.7)
+        return "spoken"
+
+    sched.register(ActionKind.SPEAK, slow_tts)
+    # 预计动作时长按短句 <= 0.5s 校验预算（用 duration_s=0.4 模拟），但合成+播放总耗时 0.7s 在 0.5+0.6=1.1s 墙钟内成功完成
+    result = await sched.submit(Plan(steps=(
+        PlanStep(1, ActionKind.SPEAK, {"text": "x", "duration_s": 0.4}),
+    )))
+    assert result.status is StepStatus.SUCCESS
+
+
+@pytest.mark.asyncio
+async def test_approach_action_is_exempt_from_short_plan_budget_and_locks_movement():
+    state = StateStore()
+    sched = Scheduler(state, max_plan_seconds=5.0)
+    seen_busy = []
+
+    async def run_approach(_step):
+        seen_busy.extend(state.facts.busy_channels())
+        await asyncio.sleep(0.05)
+        return "arrived"
+
+    sched.register(ActionKind.APPROACH, run_approach)
+    result = await sched.submit(Plan(steps=(
+        PlanStep(1, ActionKind.APPROACH, {"target_id": "person", "timeout": 15.0}),
+    )))
+    assert result.status is StepStatus.SUCCESS
+    from aether.contracts.plan import Channel
+    assert Channel.MOVEMENT in seen_busy
+    assert state.facts.busy_channels() == ()

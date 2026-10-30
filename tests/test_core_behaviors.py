@@ -29,9 +29,13 @@ async def test_rate_limited_then_forced():
     state, hb = StateStore(), HeartbeatAssembler()
     assert hb.assemble(state.facts, None).should_send
     assert hb.assemble(state.facts, None).gate is Gate.TOO_SOON
-    # wake_er2 立即穿透节流
+    # wake_er2 立即穿透节流，但同一份 BrainOutput 只能唤醒一次，防止 2Hz 心跳风暴
     brain = BrainOutput(wake_er2=True, suggested_reply="你好呀")
     assert hb.assemble(state.facts, brain).should_send
+    assert hb.assemble(state.facts, brain).gate is Gate.TOO_SOON
+    # 新一轮 BrainOutput 再次带 wake_er2 时可再次唤醒
+    brain2 = BrainOutput(wake_er2=True, suggested_reply="你好呀")
+    assert hb.assemble(state.facts, brain2).should_send
 
 
 @pytest.mark.asyncio
@@ -139,6 +143,33 @@ def test_empty_plan_rejected():
         parse_tool_call("execute_plan", {"steps": []}, max_steps=6)
 
 
+def test_top_level_expression_and_empty_motion_prompt_validation():
+    expr_plan = parse_tool_call("expression", {"name": "smile"}, max_steps=6)
+    assert expr_plan.steps[0].action is ActionKind.EXPRESSION
+    assert expr_plan.steps[0].args["name"] == "smile"
+
+    with pytest.raises(PlanRejected, match="prompt"):
+        parse_tool_call("generate_motion", {"prompt": "   "}, max_steps=6)
+    with pytest.raises(PlanRejected, match="动作名称"):
+        parse_tool_call("play_action", {"name": ""}, max_steps=6)
+
+
+def test_tool_declarations_preserve_nested_step_schema():
+    from aether.services.cerebellum.prompts import build_system_prompt, build_tool_declarations
+
+    tools = build_tool_declarations()
+    decls = {d.name: d for d in tools[0].function_declarations}
+    assert {"execute_plan", "speak", "play_action", "expression", "move", "generate_motion", "ack", "stop_all"} <= set(decls)
+
+    steps_schema = decls["execute_plan"].parameters.properties["steps"]
+    item_props = steps_schema.items.properties
+    assert {"seq", "action", "args", "parallel"} <= set(item_props)
+    assert "play_action" in item_props["action"].enum
+
+    prompt = build_system_prompt(("wave",), ("forward",), ("neutral", "smile"))
+    assert "neutral、smile" in prompt
+
+
 def test_long_running_classification():
     """move / generate_motion / 多步 → 立即 ack；单句 speak → 真阻塞"""
     assert is_long_running(parse_tool_call("move", {"direction": "forward"}, max_steps=6))
@@ -202,7 +233,23 @@ async def test_emergency_runs_all_actions_and_marks_state():
 def test_stop_keyword_detection():
     assert EmergencyStop.matches_keyword("你给我停下")
     assert EmergencyStop.matches_keyword("STOP")
+    assert EmergencyStop.matches_keyword("please stop!")
+    assert EmergencyStop.matches_keyword("freeze now")
     assert not EmergencyStop.matches_keyword("继续走")
+    assert not EmergencyStop.matches_keyword("she is unstoppable today")
+    assert not EmergencyStop.matches_keyword("freezing weather")
+
+
+def test_normalize_health_status_handles_bool_and_reports():
+    from types import SimpleNamespace
+    from aether.contracts.facts import normalize_health_status
+
+    assert normalize_health_status(True) == "ok"
+    assert normalize_health_status(False) == "offline"
+    assert normalize_health_status(SimpleNamespace(healthy=True)) == "ok"
+    assert normalize_health_status(SimpleNamespace(healthy=False)) == "degraded"
+    assert normalize_health_status("degraded") == "degraded"
+    assert normalize_health_status(None) == "unknown"
 
 
 @pytest.mark.asyncio

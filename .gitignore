@@ -1,14 +1,18 @@
-﻿__pycache__/
+__pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+motion-provider/.venv/
+motion-provider/dist/
 .pytest_cache/
 motion-provider/build/
+*.log
 logs/*.log
 logs/*.pkl
 logs/*.wav
 data/*.sqlite3
 dart/data/
+dart/DART/data/
 dart/mld_denoiser/
 dart/mvae/
 dart/policy_train/
@@ -28,4 +32,6 @@ avatar-project/Library/
 avatar-project/Temp/
 avatar-project/Logs/
 avatar-project/UserSettings/
-unity-setup.log
+avatar-project/Assets/XR
+avatar-project/Assets/XR/
+avatar-project/Assets/XR.meta
